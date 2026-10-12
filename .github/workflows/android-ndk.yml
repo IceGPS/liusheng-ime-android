@@ -123,6 +123,30 @@ jobs:
           cmake --build build/bridge --config Release -j"$(nproc)"
           ls -lh build/bridge/libvoiceime_mnn.so
 
+      - name: Generate BuildInfo.kt (version + git sha + build time)
+        run: |
+          set -euo pipefail
+          PROJ_DIR="$GITHUB_WORKSPACE"
+          # 从 app/build.gradle.kts 解析 versionCode/versionName（唯一真相源）
+          VERSION_CODE=$(grep -m1 "versionCode = " "$PROJ_DIR/app/build.gradle.kts" | grep -oE "[0-9]+")
+          VERSION_NAME=$(grep -m1 'versionName = ' "$PROJ_DIR/app/build.gradle.kts" | grep -oE '"[^"]+"' | tr -d '"')
+          GIT_SHA_SHORT="${GITHUB_SHA:0:7}"
+          BUILD_DATE_UTC=$(date -u "+%Y-%m-%d %H:%M UTC")
+          echo "VERSION_CODE=$VERSION_CODE VERSION_NAME=$VERSION_NAME GIT_SHA=$GIT_SHA_SHORT BUILD_DATE=$BUILD_DATE_UTC"
+          cat > "$PROJ_DIR/app/src/main/java/com/icegps/voiceime/util/BuildInfo.kt" <<EOF
+          package com.icegps.voiceime.util
+
+          /** CI 自动生成，请勿手改 */
+          object BuildInfo {
+              const val VERSION_NAME = "$VERSION_NAME"
+              const val VERSION_CODE = $VERSION_CODE
+              const val BUILD_DATE = "$BUILD_DATE_UTC"
+              const val GIT_SHA = "$GIT_SHA_SHORT"
+          }
+          EOF
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+
       - name: Build APK (manual pipeline + native libs)
         run: |
           set -euo pipefail
@@ -133,8 +157,8 @@ jobs:
           BT="$ANDROID_HOME/build-tools/34.0.0"
           PLATFORM="$ANDROID_HOME/platforms/android-34/android.jar"
           APP_ID="com.icegps.voiceime"
-          VERSION_CODE=2
-          VERSION_NAME="0.2.0-v2"
+          VERSION_CODE="${VERSION_CODE:?}"
+          VERSION_NAME="${VERSION_NAME:?}"
 
           export PATH="$JAVA_HOME/bin:$BT:$PATH"
 
