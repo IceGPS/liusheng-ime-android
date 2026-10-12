@@ -77,6 +77,13 @@ object ModelDownloader {
                 require(safeName.isNotEmpty() && !entry.name.contains("..")) {
                     "非法文件名：${entry.name}"
                 }
+                // config.json 是 App 生成的 MNN 运行时配置（见 MnnAsrBackend.ensureConfigJson），
+                // 绝不能用 HF 仓库的 config.json 覆盖 —— manifest 里若有，直接跳过。
+                if (safeName.equals("config.json", ignoreCase = true)) {
+                    Log.i(TAG, "[model] 跳过 manifest 中的 config.json（App 生成运行时配置）")
+                    listener.onProgress(safeName, 1, 1, i + 1, manifest.size)
+                    return@forEachIndexed
+                }
                 val tmp = File(dir, "$safeName.tmp")
                 val final = File(dir, safeName)
                 if (final.isFile && sha256Of(final).equals(entry.sha256, ignoreCase = true)) {
