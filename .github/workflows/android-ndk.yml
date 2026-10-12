@@ -91,19 +91,25 @@ jobs:
           git log -1 --format='MNN @ %H %ad' --date=short
 
       - name: Build MNN for Android arm64-v8a
-        working-directory: MNN
+        working-directory: MNN/project/android
         timeout-minutes: 180
+        env:
+          ANDROID_NDK: ${{ env.ANDROID_NDK_HOME }}
         run: |
           set -euo pipefail
+          # build_64.sh 是薄封装（cmake ../../../），必须在
+          # MNN/project/android/build_64/ 目录里执行；另补上
+          # ANDROID_NDK 环境变量（脚本内部引用）。
           # cmake 参数与 README "MNN native 构建" 一致；另关掉
           # test/benchmark/quanTools/converter 以省时间（不影响 libMNN.so 本体）。
-          ./project/android/build_64.sh "-DMNN_BUILD_LLM=true -DLLM_SUPPORT_AUDIO=true \
+          mkdir -p build_64 && cd build_64
+          ../build_64.sh "-DMNN_BUILD_LLM=true -DLLM_SUPPORT_AUDIO=true \
             -DMNN_BUILD_AUDIO=true -DMNN_LOW_MEMORY=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true \
             -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_ARM82=true -DMNN_USE_LOGCAT=true \
             -DMNN_BUILD_TEST=false -DMNN_BUILD_BENCHMARK=false \
             -DMNN_BUILD_QUANTOOLS=false -DMNN_BUILD_CONVERTER=false \
             -DCMAKE_SHARED_LINKER_FLAGS='-Wl,-z,max-page-size=16384' -DCMAKE_INSTALL_PREFIX=."
-          ls -lh project/android/build_64/lib/libMNN.so
+          ls -lh lib/libMNN.so
 
       - name: Build libvoiceime_mnn.so (JNI bridge)
         run: |
