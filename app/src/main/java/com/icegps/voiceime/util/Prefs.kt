@@ -23,11 +23,11 @@ object Prefs {
     const val ENGINE_LAN_ONLY = "lan_only"
 
     /**
-     * 模型下载基地址（占位）。
-     * TODO(hosting)：实际 hosting 确定后改成 release 附件目录，
+     * 模型下载基地址。
+     * GitHub Release: model-qwen3-asr-0.6b-int8
      * 需保证 `<baseUrl>/SHA256SUMS` 与 `<baseUrl>/<filename>` 可直接下载。
      */
-    const val DEFAULT_MODEL_URL = "https://github.com/IceGPS/voice-ime-android/releases"
+    const val DEFAULT_MODEL_URL = "https://github.com/IceGPS/voice-ime-android/releases/download/model-qwen3-asr-0.6b-int8"
 
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
