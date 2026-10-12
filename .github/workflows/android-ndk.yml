@@ -20,7 +20,7 @@ name: Android NDK build (MNN + APK)
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
