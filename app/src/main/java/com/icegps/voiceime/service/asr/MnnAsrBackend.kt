@@ -168,12 +168,19 @@ class MnnAsrBackend(private val appCtx: Context) : AsrBackend {
         }
 
         /**
-         * 生成运行时 config.json（不存在时写入；已存在则不动，方便以后调参）。
+         * 生成运行时 config.json（不存在时写入；已存在且是 App 生成的运行时配置则不动，
+         * 方便以后调参；若已存在但不是运行时配置——比如 V12 从 manifest 下载了 HF 的
+         * config.json——删掉重写，避免 native 侧 Llm::createLLM 读错）。
          * 关键项：is_audio + audio_type=qwen3_asr + greedy 采样 + 纯 CPU。
          */
         fun ensureConfigJson(ctx: Context) {
             val f = File(modelDir(ctx), "config.json")
-            if (f.isFile && f.length() > 0L) return
+            if (f.isFile && f.length() > 0L) {
+                val text = runCatching { f.readText() }.getOrDefault("")
+                if (text.contains("\"is_audio\"")) return
+                Log.w(TAG, "[mnn] config.json 不是运行时配置（疑似 HF 的），删掉重写")
+                f.delete()
+            }
             f.parentFile?.mkdirs()
             f.writeText(
                 """{
