@@ -1,0 +1,18 @@
+# build outputs
+build/
+app/build/
+dist/*.apk
+# exported MNN model files (large, ~1GB; downloaded on first launch, not in git)
+models/
+# MNN prebuilt native libs (built from MNN source, see app/src/main/jniLibs/README.md)
+app/src/main/jniLibs/arm64-v8a/*.so
+app/src/main/jniLibs/armeabi-v7a/*.so
+app/src/main/jniLibs/x86_64/*.so
+# gradle
+.gradle/
+local.properties
+# IDE
+.idea/
+*.iml
+# OS
+.DS_Store

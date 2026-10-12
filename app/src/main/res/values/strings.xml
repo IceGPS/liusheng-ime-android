@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Voice-IME</string>
+    <string name="a11y_desc">voice-ime 需要无障碍权限，才能把语音转写的文字输入到当前 App 的输入框里。不会读取密码框内容。</string>
+    <string name="notif_channel_name">voice-ime 服务</string>
+    <string name="notif_channel_desc">悬浮球录音服务的常驻通知</string>
+    <string name="notif_title">voice-ime 悬浮球运行中</string>
+    <string name="notif_text">按住悬浮球说话，松开转为文字</string>
+</resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 麦克风图标：悬浮球和应用图标共用 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,15a3,3 0 0,0 3,-3L15,6a3,3 0 0,0 -6,0v6a3,3 0 0,0 3,3zM17.3,12a5.3,5.3 0 0,1 -10.6,0L5,12a7,7 0 0,0 6,6.92L11,21h2v-2.08A7,7 0 0,0 19,12h-1.7z" />
+</vector>
