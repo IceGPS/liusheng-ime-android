@@ -109,7 +109,7 @@ jobs:
             -DMNN_BUILD_TEST=false -DMNN_BUILD_BENCHMARK=false \
             -DMNN_BUILD_QUANTOOLS=false -DMNN_BUILD_CONVERTER=false \
             -DCMAKE_SHARED_LINKER_FLAGS='-Wl,-z,max-page-size=16384' -DCMAKE_INSTALL_PREFIX=."
-          ls -lh lib/libMNN.so
+          ls -lh libMNN.so
 
       - name: Build libvoiceime_mnn.so (JNI bridge)
         run: |
@@ -154,7 +154,7 @@ jobs:
           echo "== 准备 native libs（libMNN.so + libvoiceime_mnn.so）"
           STAGE="$BUILD_DIR/native"
           mkdir -p "$STAGE/lib/arm64-v8a"
-          cp "$PROJ_DIR/MNN/project/android/build_64/lib/libMNN.so" "$STAGE/lib/arm64-v8a/"
+          cp "$PROJ_DIR/MNN/project/android/build_64/libMNN.so" "$STAGE/lib/arm64-v8a/"
           cp "$PROJ_DIR/build/bridge/libvoiceime_mnn.so" "$STAGE/lib/arm64-v8a/"
           ls -lh "$STAGE/lib/arm64-v8a/"
 
