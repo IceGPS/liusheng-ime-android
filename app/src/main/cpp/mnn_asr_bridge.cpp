@@ -127,7 +127,7 @@ Java_com_icegps_voiceime_service_asr_MnnAsrBackend_nativeTranscribe(JNIEnv* env,
 
     session->llm->reset();  // clear KV cache / history from previous utterance
     std::ostringstream oss;
-    session->llm->response(prompt, &oss, "<eop>", static_cast<int>(maxNewTokens));
+    session->llm->response(prompt, &oss, "<|endoftext|>", static_cast<int>(maxNewTokens));
 
     const MNN::Transformer::LlmContext* ctx = session->llm->getContext();
     if (ctx) {
