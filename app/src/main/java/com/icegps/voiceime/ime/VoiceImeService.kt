@@ -109,7 +109,39 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 切回上一个输入法（放最左：不常用）
+        // 设置键：打开设置页（放最左：切换服务端/端侧模型）
+        val settingsBtn = Button(ctx).apply {
+            text = "⚙️"
+            textSize = 22f
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                marginEnd = dp(8)
+            }
+        }
+        settingsBtn.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.alpha = 0.5f
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.alpha = 1f
+                    v.performClick()
+                    val intent = android.content.Intent(ctx, com.icegps.voiceime.ui.SettingsActivity::class.java)
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(intent)
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.alpha = 1f
+                    true
+                }
+                else -> false
+            }
+        }
+
+        // 切回上一个输入法
         val switchBtn = Button(ctx).apply {
             text = "🌐"
             textSize = 22f
@@ -162,6 +194,7 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
+        row.addView(settingsBtn)
         row.addView(switchBtn)
         row.addView(voiceBtn)
         row.addView(backBtn)
