@@ -12,6 +12,7 @@ import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.icegps.voiceime.service.ModelDownloader
@@ -71,6 +72,18 @@ class SettingsActivity : Activity() {
         }
         engineGroup.setOnCheckedChangeListener { _, _ -> saveEngine() }
         root.addView(engineGroup)
+
+        // ---------- VAD（语音活动检测） ----------
+        root.addView(sectionTitle("语音输入方式"))
+        val vadSwitch = Switch(this).apply {
+            text = "VAD 模式：点按开始，静音自动停止（默认关闭为按住说话）"
+            isChecked = Prefs.isVadEnabled(this@SettingsActivity)
+            setOnCheckedChangeListener { _, checked ->
+                Prefs.setVadEnabled(this@SettingsActivity, checked)
+                toast(if (checked) "VAD 已启用" else "VAD 已关闭")
+            }
+        }
+        root.addView(vadSwitch)
 
         // ---------- 端侧模型 ----------
         root.addView(sectionTitle("端侧模型（SenseVoice-Small INT8，约 230MB）"))

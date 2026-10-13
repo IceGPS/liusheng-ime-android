@@ -92,4 +92,26 @@ object Prefs {
     fun setModelReady(ctx: Context, v: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_MODEL_READY, v).apply()
     }
+
+    // ---------- VAD（语音活动检测） ----------
+
+    private const val KEY_VAD_ENABLED = "vad_enabled"
+
+    /** VAD 是否启用：点按开始、静音自动停止。默认关闭（按住说话模式）。 */
+    fun isVadEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_VAD_ENABLED, false)
+
+    fun setVadEnabled(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_VAD_ENABLED, v).apply()
+    }
+
+    private const val KEY_VAD_SILENCE_MS = "vad_silence_ms"
+
+    /** VAD 静音超时毫秒数，默认 1500ms */
+    fun getVadSilenceMs(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_VAD_SILENCE_MS, 1500)
+
+    fun setVadSilenceMs(ctx: Context, v: Int) {
+        prefs(ctx).edit().putInt(KEY_VAD_SILENCE_MS, v.coerceIn(500, 5000)).apply()
+    }
 }

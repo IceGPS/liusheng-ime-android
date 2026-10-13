@@ -27,6 +27,25 @@ class Recorder {
     private var totalShorts = 0
 
     /**
+     * 获取最近音频的 RMS 音量（0~1），用于 VAD 静音检测。
+     * 返回 -1 表示无数据。
+     */
+    fun getCurrentRms(): Float {
+        synchronized(chunks) {
+            if (chunks.isEmpty()) return -1f
+            // 取最后一个 chunk 计算 RMS
+            val last = chunks.last()
+            if (last.isEmpty()) return -1f
+            var sum = 0.0
+            for (s in last) {
+                val f = s / 32768.0
+                sum += f * f
+            }
+            return kotlin.math.sqrt(sum / last.size).toFloat()
+        }
+    }
+
+    /**
      * 开始录音。需要 RECORD_AUDIO 权限（调用前确保已授予）。
      * @return 是否成功启动
      */

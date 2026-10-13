@@ -65,16 +65,29 @@ class VoiceImeService : InputMethodService() {
         }
         this.voiceBtn = voiceBtn
         voiceBtn.setOnTouchListener { v, event ->
+            val vadEnabled = Prefs.isVadEnabled(this)
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    startRecording()
+                    if (vadEnabled) {
+                        // VAD 模式：点按切换
+                        if (isVadRecording) {
+                            stopVadRecording()
+                        } else {
+                            startVadRecording()
+                        }
+                    } else {
+                        startRecording()
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     v.alpha = 1f
-                    stopAndTranscribe()
+                    if (!vadEnabled) {
+                        stopAndTranscribe()
+                    }
+                    // VAD 模式下 UP 不做任何事（靠点按切换或自动停止）
                     true
                 }
                 else -> false
@@ -208,6 +221,59 @@ class VoiceImeService : InputMethodService() {
     private var voiceBtn: Button? = null
 
     private var recordStartMs: Long = 0
+    private var isVadRecording = false
+    private var vadMonitorThread: Thread? = null
+    @Volatile private var vadStopRequested = false
+
+    private fun startVadRecording() {
+        if (!recorder.start()) {
+            toast("录音启动失败，请检查麦克风权限")
+            return
+        }
+        isVadRecording = true
+        recordStartMs = System.currentTimeMillis()
+        vadStopRequested = false
+        uiHandler.post { voiceBtn?.text = "🎤 VAD 录音中…点按停止" }
+
+        // VAD 监控线程：检测静音自动停止
+        val silenceMs = Prefs.getVadSilenceMs(this)
+        vadMonitorThread = thread {
+            var silenceStart = -1L
+            val rmsThreshold = 0.02f // RMS 低于此值视为静音
+            while (!vadStopRequested && isVadRecording) {
+                try {
+                    Thread.sleep(100)
+                } catch (_: InterruptedException) {
+                    break
+                }
+                val rms = recorder.getCurrentRms()
+                if (rms < 0) continue
+                val now = System.currentTimeMillis()
+                // 至少录 1 秒后才开始检测静音（避免刚开始就停）
+                if (now - recordStartMs < 1000) continue
+                if (rms < rmsThreshold) {
+                    if (silenceStart < 0) silenceStart = now
+                    if (now - silenceStart >= silenceMs) {
+                        // 静音超时，自动停止
+                        uiHandler.post { stopVadRecording() }
+                        break
+                    }
+                } else {
+                    silenceStart = -1L
+                }
+            }
+        }
+    }
+
+    private fun stopVadRecording() {
+        if (!isVadRecording) return
+        isVadRecording = false
+        vadStopRequested = true
+        vadMonitorThread?.interrupt()
+        vadMonitorThread = null
+        uiHandler.post { voiceBtn?.text = "🎤 按住说话" }
+        stopAndTranscribe()
+    }
 
     private fun startRecording() {
         if (!recorder.start()) {
