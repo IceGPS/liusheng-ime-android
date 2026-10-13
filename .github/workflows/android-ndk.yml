@@ -16,7 +16,7 @@
 #   - MNN_COMMIT：模型导出 + 数值对齐验证时的 master commit，不随意升级
 #   - NDK r27：README 指定的版本
 
-name: Android NDK build (MNN + APK)
+name: Android NDK build (sherpa-onnx + APK)
 
 on:
   push:
@@ -80,48 +80,22 @@ jobs:
           echo "KOTLINC_HOME=${GITHUB_WORKSPACE}/kotlinc" >> "$GITHUB_ENV"
           "${GITHUB_WORKSPACE}/kotlinc/bin/kotlinc" -version
 
-      - name: Clone MNN (pinned commit)
+      - name: Download sherpa-onnx AAR
         run: |
           set -euo pipefail
-          git init MNN
-          cd MNN
-          git remote add origin https://github.com/alibaba/MNN.git
-          git fetch --depth 1 origin "${MNN_COMMIT}"
-          git checkout FETCH_HEAD
-          git log -1 --format='MNN @ %H %ad' --date=short
-
-      - name: Build MNN for Android arm64-v8a
-        working-directory: MNN/project/android
-        timeout-minutes: 180
-        env:
-          ANDROID_NDK: ${{ env.ANDROID_NDK_HOME }}
-        run: |
-          set -euo pipefail
-          # build_64.sh 是薄封装（cmake ../../../），必须在
-          # MNN/project/android/build_64/ 目录里执行；另补上
-          # ANDROID_NDK 环境变量（脚本内部引用）。
-          # cmake 参数与 README "MNN native 构建" 一致；另关掉
-          # test/benchmark/quanTools/converter 以省时间（不影响 libMNN.so 本体）。
-          mkdir -p build_64 && cd build_64
-          ../build_64.sh "-DMNN_BUILD_LLM=true -DLLM_SUPPORT_AUDIO=true \
-            -DMNN_BUILD_AUDIO=true -DMNN_LOW_MEMORY=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true \
-            -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_ARM82=true -DMNN_USE_LOGCAT=true \
-            -DMNN_BUILD_TEST=false -DMNN_BUILD_BENCHMARK=false \
-            -DMNN_BUILD_QUANTOOLS=false -DMNN_BUILD_CONVERTER=false \
-            -DCMAKE_SHARED_LINKER_FLAGS='-Wl,-z,max-page-size=16384' -DCMAKE_INSTALL_PREFIX=."
-          ls -lh libMNN.so
-
-      - name: Build libvoiceime_mnn.so (JNI bridge)
-        run: |
-          set -euo pipefail
-          cmake -S app/src/main/cpp -B build/bridge \
-            -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-26 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DMNN_ROOT="${GITHUB_WORKSPACE}/MNN"
-          cmake --build build/bridge --config Release -j"$(nproc)"
-          ls -lh build/bridge/libvoiceime_mnn.so
+          mkdir -p app/libs
+          SHERPA_VERSION="1.13.6"
+          SHERPA_AAR="app/libs/sherpa-onnx-${SHERPA_VERSION}.aar"
+          if [ ! -f "$SHERPA_AAR" ]; then
+            echo "Downloading sherpa-onnx AAR v${SHERPA_VERSION}..."
+            curl -sSL --max-time 300 -o "$SHERPA_AAR" \
+              "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-${SHERPA_VERSION}.aar"
+          fi
+          ls -lh "$SHERPA_AAR"
+          # 解压 AAR：classes.jar 用于编译，jni/*.so 打进 APK
+          rm -rf build/sherpa && mkdir -p build/sherpa
+          (cd build/sherpa && unzip -o -q "$GITHUB_WORKSPACE/$SHERPA_AAR")
+          ls -lh build/sherpa/jni/arm64-v8a/
 
       - name: Generate BuildInfo.kt (version + git sha + build time)
         run: |
@@ -175,12 +149,14 @@ jobs:
           done
           CP_DEPS="$DEPS_DIR/kotlin-stdlib-2.0.20.jar:$DEPS_DIR/okhttp-4.12.0.jar:$DEPS_DIR/okio-jvm-3.6.0.jar:$DEPS_DIR/annotations-13.0.jar"
 
-          echo "== 准备 native libs（libMNN.so + libvoiceime_mnn.so）"
+          echo "== 准备 native libs（sherpa-onnx AAR 的 .so）"
           STAGE="$BUILD_DIR/native"
           mkdir -p "$STAGE/lib/arm64-v8a"
-          cp "$PROJ_DIR/MNN/project/android/build_64/libMNN.so" "$STAGE/lib/arm64-v8a/"
-          cp "$PROJ_DIR/build/bridge/libvoiceime_mnn.so" "$STAGE/lib/arm64-v8a/"
+          cp "$PROJ_DIR/build/sherpa/jni/arm64-v8a/"*.so "$STAGE/lib/arm64-v8a/"
           ls -lh "$STAGE/lib/arm64-v8a/"
+          # sherpa-onnx classes.jar 加入编译 classpath
+          SHERPA_JAR="$PROJ_DIR/build/sherpa/classes.jar"
+          CP_DEPS="$CP_DEPS:$SHERPA_JAR"
 
           echo "== aapt2 compile/link（资源 + R.java + base.apk）"
           mkdir -p "$BUILD_DIR/compiled-res" "$BUILD_DIR/gen"
@@ -208,7 +184,8 @@ jobs:
           "$JAVA_HOME/bin/java" -cp "$BT/lib/d8.jar" com.android.tools.r8.D8 \
             --min-api 26 --lib "$PLATFORM" --output "$BUILD_DIR/dex/" \
             "$BUILD_DIR/app-classes.jar" \
-            "$DEPS_DIR/kotlin-stdlib-2.0.20.jar" "$DEPS_DIR/okhttp-4.12.0.jar" "$DEPS_DIR/okio-jvm-3.6.0.jar"
+            "$DEPS_DIR/kotlin-stdlib-2.0.20.jar" "$DEPS_DIR/okhttp-4.12.0.jar" "$DEPS_DIR/okio-jvm-3.6.0.jar" \
+            "$SHERPA_JAR"
 
           echo "== 打包：classes.dex + native libs（.so 不压缩存放）"
           cp "$BUILD_DIR/dex/classes.dex" "$BUILD_DIR/"
@@ -240,6 +217,5 @@ jobs:
           name: voice-ime-android-v2-ndk
           path: |
             dist/voice-ime-android-v2.apk
-            dist/native-libs/arm64-v8a/libMNN.so
-            dist/native-libs/arm64-v8a/libvoiceime_mnn.so
+            dist/native-libs/arm64-v8a/*.so
           if-no-files-found: error
