@@ -12,6 +12,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Toast
 import com.icegps.voiceime.service.Recorder
+import com.icegps.voiceime.service.TranscriptLogger
 import com.icegps.voiceime.service.asr.AsrBackend
 import com.icegps.voiceime.service.asr.LanAsrBackend
 import com.icegps.voiceime.service.asr.SherpaAsrBackend
@@ -206,11 +207,14 @@ class VoiceImeService : InputMethodService() {
 
     private var voiceBtn: Button? = null
 
+    private var recordStartMs: Long = 0
+
     private fun startRecording() {
         if (!recorder.start()) {
             toast("录音启动失败，请检查麦克风权限")
             return
         }
+        recordStartMs = System.currentTimeMillis()
         uiHandler.post {
             voiceBtn?.text = "🎤 录音中…"
         }
@@ -223,12 +227,22 @@ class VoiceImeService : InputMethodService() {
             toast("录音太短")
             return
         }
+        val durMs = System.currentTimeMillis() - recordStartMs
         val backend = pickBackend() ?: return
+        // 判断引擎类型（用于日志）
+        val engineName = when (backend) {
+            is com.icegps.voiceime.service.asr.SherpaAsrBackend -> "ondevice"
+            else -> "lan"
+        }
         toast("转写中…")
         thread {
             try {
                 val result = backend.transcribe(pcm)
                 val text = result.text.trim()
+                // 保存语音 + 转写记录（供 Syncthing 同步到 PC）
+                if (text.isNotEmpty()) {
+                    TranscriptLogger.log(this, pcm, text, engineName, durMs)
+                }
                 uiHandler.post {
                     if (text.isNotEmpty()) {
                         // 系统原生上屏：光标处插入，不覆盖，不进候选栏
