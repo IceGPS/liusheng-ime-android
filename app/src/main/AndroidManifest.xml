@@ -14,7 +14,8 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-
+    <!-- 备份恢复需要读写 Download，Android 11+ 用所有文件访问权限最稳 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
