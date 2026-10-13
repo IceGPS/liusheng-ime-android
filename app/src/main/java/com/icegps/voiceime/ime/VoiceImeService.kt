@@ -48,7 +48,7 @@ class VoiceImeService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         val ctx = this
-        // 外层垂直布局：第一行主按钮，第二行数字/标点（可折叠）
+        // 外层垂直布局：符号行、数字行（可折叠，默认关闭）、主输入行
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -229,18 +229,22 @@ class VoiceImeService : InputMethodService() {
         row.addView(backBtn)
         row.addView(enterBtn)
 
-        // 第二行：数字 + 常用标点（默认折叠）
-        val numpadRow = LinearLayout(ctx).apply {
+        // 数字/标点区：两行，默认折叠，放在主输入行上面
+        // 第一行：加减乘除，等号，百分号，逗号，句号，问号，下划线
+        val symbolRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             visibility = if (Prefs.isNumPadExpanded(ctx)) View.VISIBLE else View.GONE
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, 0, 0, dp(4))
         }
-        // 数字 0-9
-        val numChars = listOf("1","2","3","4","5","6","7","8","9","0")
-        // 常用中文标点
-        val punctChars = listOf("，","。","！","？","、","；","：","「","」","（","）")
-        for (ch in numChars + punctChars) {
+        // 第二行：0-9 数字
+        val digitRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = if (Prefs.isNumPadExpanded(ctx)) View.VISIBLE else View.GONE
+            setPadding(0, 0, 0, dp(4))
+        }
+        fun makeCharBtn(ch: String): Button {
             val b = Button(ctx).apply {
                 text = ch
                 textSize = 18f
@@ -264,7 +268,15 @@ class VoiceImeService : InputMethodService() {
                     else -> false
                 }
             }
-            numpadRow.addView(b)
+            return b
+        }
+        // 第一行 10 个符号：+ - × ÷ = % ，。？ _
+        for (ch in listOf("+","-","×","÷","=","%","，","。","？","_")) {
+            symbolRow.addView(makeCharBtn(ch))
+        }
+        // 第二行 10 个数字：0-9
+        for (ch in listOf("0","1","2","3","4","5","6","7","8","9")) {
+            digitRow.addView(makeCharBtn(ch))
         }
 
         // 开关点击：展开/折叠
@@ -273,13 +285,15 @@ class VoiceImeService : InputMethodService() {
                 MotionEvent.ACTION_DOWN -> {
                     v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    val expanded = numpadRow.visibility == View.VISIBLE
+                    val expanded = symbolRow.visibility == View.VISIBLE
                     if (expanded) {
-                        numpadRow.visibility = View.GONE
+                        symbolRow.visibility = View.GONE
+                        digitRow.visibility = View.GONE
                         (v as Button).text = "⇧"
                         Prefs.setNumPadExpanded(ctx, false)
                     } else {
-                        numpadRow.visibility = View.VISIBLE
+                        symbolRow.visibility = View.VISIBLE
+                        digitRow.visibility = View.VISIBLE
                         (v as Button).text = "⇩"
                         Prefs.setNumPadExpanded(ctx, true)
                     }
@@ -293,8 +307,10 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
+        // 顺序：符号行、数字行、主输入行
+        root.addView(symbolRow)
+        root.addView(digitRow)
         root.addView(row)
-        root.addView(numpadRow)
         return root
     }
 

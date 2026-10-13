@@ -12,7 +12,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.icegps.voiceime.service.ServerClient
-import com.icegps.voiceime.service.asr.MnnAsrBackend
+import com.icegps.voiceime.service.asr.SherpaAsrBackend
 import com.icegps.voiceime.ui.OnboardingActivity
 import com.icegps.voiceime.ui.SettingsActivity
 import com.icegps.voiceime.util.BuildInfo
@@ -81,8 +81,8 @@ class MainActivity : Activity() {
         val engine = if (Prefs.getEngine(this) == Prefs.ENGINE_LAN_ONLY) "仅局域网" else "端侧优先"
         val modelState = when {
             Prefs.getEngine(this) == Prefs.ENGINE_LAN_ONLY -> "（不使用）"
-            MnnAsrBackend.isModelReady(this) ->
-                "已就绪（${MnnAsrBackend.modelSizeBytes(this) / 1024 / 1024}MB）"
+            SherpaAsrBackend.isModelReady(this) ->
+                "已就绪（${SherpaAsrBackend.modelSizeBytes(this) / 1024 / 1024}MB）"
             else -> "未下载"
         }
         val host = Prefs.getHost(this).ifEmpty { "（未设置）" }
