@@ -48,10 +48,24 @@ class VoiceImeService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         val ctx = this
+        // 外层垂直布局：第一行主按钮，第二行数字/标点（可折叠）
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+
+        // 数字/标点区开关：最左边，空心上箭头
+        val numpadToggleBtn = Button(ctx).apply {
+            text = if (Prefs.isNumPadExpanded(ctx)) "⇩" else "⇧"
+            textSize = 20f
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                marginEnd = dp(8)
+            }
         }
 
         // 语音键：按住录音，松开转写
@@ -208,12 +222,80 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
+        row.addView(numpadToggleBtn)
         row.addView(settingsBtn)
         row.addView(switchBtn)
         row.addView(voiceBtn)
         row.addView(backBtn)
         row.addView(enterBtn)
-        return row
+
+        // 第二行：数字 + 常用标点（默认折叠）
+        val numpadRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = if (Prefs.isNumPadExpanded(ctx)) View.VISIBLE else View.GONE
+            setPadding(0, dp(4), 0, 0)
+        }
+        // 数字 0-9
+        val numChars = listOf("1","2","3","4","5","6","7","8","9","0")
+        // 常用中文标点
+        val punctChars = listOf("，","。","！","？","、","；","：","「","」","（","）")
+        for (ch in numChars + punctChars) {
+            val b = Button(ctx).apply {
+                text = ch
+                textSize = 18f
+                isHapticFeedbackEnabled = true
+                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                    marginEnd = dp(4)
+                }
+            }
+            b.setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.alpha = 0.5f
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                        currentInputConnection?.commitText(ch, 1)
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.alpha = 1f
+                        true
+                    }
+                    else -> false
+                }
+            }
+            numpadRow.addView(b)
+        }
+
+        // 开关点击：展开/折叠
+        numpadToggleBtn.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.alpha = 0.5f
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    val expanded = numpadRow.visibility == View.VISIBLE
+                    if (expanded) {
+                        numpadRow.visibility = View.GONE
+                        (v as Button).text = "⇧"
+                        Prefs.setNumPadExpanded(ctx, false)
+                    } else {
+                        numpadRow.visibility = View.VISIBLE
+                        (v as Button).text = "⇩"
+                        Prefs.setNumPadExpanded(ctx, true)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.alpha = 1f
+                    true
+                }
+                else -> false
+            }
+        }
+
+        root.addView(row)
+        root.addView(numpadRow)
+        return root
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

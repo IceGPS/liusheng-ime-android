@@ -114,4 +114,12 @@ object Prefs {
     fun setVadSilenceMs(ctx: Context, v: Int) {
         prefs(ctx).edit().putInt(KEY_VAD_SILENCE_MS, v.coerceIn(500, 5000)).apply()
     }
+
+    /** 数字/标点区是否展开，默认关闭 */
+    fun isNumPadExpanded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("numpad_expanded", false)
+
+    fun setNumPadExpanded(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean("numpad_expanded", v).apply()
+    }
 }
