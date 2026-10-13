@@ -194,11 +194,9 @@ jobs:
 
           echo "== 对齐/签名/校验"
           "$BT/zipalign" -f 4 "$BUILD_DIR/base.apk" "$BUILD_DIR/aligned.apk"
+          # 用固定 keystore（GitHub secret KEYSTORE_B64），保证每次签名一致，可覆盖安装
           KEYSTORE="$BUILD_DIR/debug.keystore"
-          "$JAVA_HOME/bin/keytool" -genkeypair \
-            -keystore "$KEYSTORE" -storepass android -keypass android \
-            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10950 \
-            -dname "CN=Android Debug,O=Android,C=US" > /dev/null
+          echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > "$KEYSTORE"
           "$JAVA_HOME/bin/java" -jar "$BT/lib/apksigner.jar" sign \
             --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android \
             --out "$BUILD_DIR/signed.apk" "$BUILD_DIR/aligned.apk"

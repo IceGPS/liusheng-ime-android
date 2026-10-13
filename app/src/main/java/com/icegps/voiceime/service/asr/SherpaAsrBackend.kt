@@ -38,6 +38,14 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
         /** 模型根目录：<filesDir>/models/sense-voice-small/ */
         fun modelDir(ctx: Context): File = File(File(ctx.filesDir, "models"), MODEL_DIR_NAME)
 
+        /** 备份目录：/sdcard/Download/voice-ime-models/sense-voice-small/（卸载不删除） */
+        fun backupDir(): File = File(
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS
+            ),
+            "voice-ime-models/$MODEL_DIR_NAME"
+        )
+
         /** 模型是否就绪：model.int8.onnx + tokens.txt 存在且大小合理（防止加载未下载完的文件） */
         fun isModelReady(ctx: Context): Boolean {
             val dir = modelDir(ctx)
@@ -47,9 +55,54 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
             return modelFile.isFile && modelFile.length() > 200L * 1024 * 1024 &&
                    tokensFile.isFile && tokensFile.length() > 100L * 1024
         }
+
+        /**
+         * 从备份恢复模型（卸载重装后免重新下载）。
+         * @return 成功恢复返回 true
+         */
+        fun restoreFromBackup(ctx: Context): Boolean {
+            if (isModelReady(ctx)) return true
+            val backup = backupDir()
+            val modelBak = File(backup, MODEL_FILE)
+            val tokensBak = File(backup, TOKENS_FILE)
+            if (!modelBak.isFile || modelBak.length() < 200L * 1024 * 1024) return false
+            if (!tokensBak.isFile || tokensBak.length() < 100L * 1024) return false
+            return try {
+                val dir = modelDir(ctx).apply { mkdirs() }
+                modelBak.copyTo(File(dir, MODEL_FILE), overwrite = true)
+                tokensBak.copyTo(File(dir, TOKENS_FILE), overwrite = true)
+                Log.i(TAG, "[sherpa] 模型已从备份恢复，无需重新下载")
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "[sherpa] 从备份恢复失败", e)
+                false
+            }
+        }
+
+        /**
+         * 备份模型到 Download（下载完成后调用）。
+         */
+        fun backupModel(ctx: Context) {
+            if (!isModelReady(ctx)) return
+            try {
+                val dir = modelDir(ctx)
+                val backup = backupDir().apply { mkdirs() }
+                File(dir, MODEL_FILE).copyTo(File(backup, MODEL_FILE), overwrite = true)
+                File(dir, TOKENS_FILE).copyTo(File(backup, TOKENS_FILE), overwrite = true)
+                Log.i(TAG, "[sherpa] 模型已备份到 ${backup.absolutePath}")
+            } catch (e: Exception) {
+                Log.w(TAG, "[sherpa] 模型备份失败", e)
+            }
+        }
     }
 
-    override fun isAvailable(): Boolean = isModelReady(appCtx)
+    override fun isAvailable(): Boolean {
+        // 先尝试从备份恢复（卸载重装场景）
+        if (!isModelReady(appCtx)) {
+            restoreFromBackup(appCtx)
+        }
+        return isModelReady(appCtx)
+    }
 
     @Throws(Exception::class)
     private fun ensureInit(): OfflineRecognizer {

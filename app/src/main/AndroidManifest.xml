@@ -9,6 +9,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 按住反馈震动 -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 模型备份到 Download（Android 9 及以下需要，10+ 分区存储可直接写 Download） -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
 
     <application
         android:label="@string/app_name"

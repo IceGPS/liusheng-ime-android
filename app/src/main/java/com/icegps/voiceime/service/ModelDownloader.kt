@@ -116,6 +116,8 @@ object ModelDownloader {
 
             // 全部就绪
             Log.i(TAG, "[model] all files ready in ${dir.absolutePath}")
+            // 备份到 Download，下次重装免下载
+            SherpaAsrBackend.backupModel(ctx)
         } finally {
             client.dispatcher.executorService.shutdown()
         }
