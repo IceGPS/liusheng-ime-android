@@ -58,20 +58,20 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
             val dir = modelDir(appCtx)
             Log.i(TAG, "[sherpa] loading model from ${dir.absolutePath} ...")
             val t0 = SystemClock.elapsedRealtime()
-            val senseVoiceConfig = OfflineSenseVoiceModelConfig(
-                model = File(dir, MODEL_FILE).absolutePath,
-                language = "auto",
-                useInverseTextNormalization = true,
-            )
-            val modelConfig = OfflineModelConfig(
-                senseVoice = senseVoiceConfig,
-                // 其余模型类型保持默认（null）
-                numThreads = 4,
-            )
-            val config = OfflineRecognizerConfig(
-                model = modelConfig,
-                // 16kHz 由调用方保证
-            )
+
+            // 用 setter 方式构造，避免 Kotlin 命名参数与 AAR 版本不一致
+            val senseVoiceConfig = OfflineSenseVoiceModelConfig().apply {
+                model = File(dir, MODEL_FILE).absolutePath
+                language = "auto"
+                useInverseTextNormalization = true
+            }
+            val modelCfg = OfflineModelConfig().apply {
+                senseVoice = senseVoiceConfig
+                numThreads = 4
+            }
+            val config = OfflineRecognizerConfig().apply {
+                modelConfig = modelCfg
+            }
             val rec = OfflineRecognizer(appCtx.assets, config)
             Log.i(TAG, "[sherpa] model loaded in ${SystemClock.elapsedRealtime() - t0}ms")
             recognizer = rec
