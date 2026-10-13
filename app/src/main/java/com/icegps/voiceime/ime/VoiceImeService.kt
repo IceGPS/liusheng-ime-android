@@ -14,7 +14,7 @@ import android.widget.Toast
 import com.icegps.voiceime.service.Recorder
 import com.icegps.voiceime.service.asr.AsrBackend
 import com.icegps.voiceime.service.asr.LanAsrBackend
-import com.icegps.voiceime.service.asr.MnnAsrBackend
+import com.icegps.voiceime.service.asr.SherpaAsrBackend
 import com.icegps.voiceime.util.Prefs
 import kotlin.concurrent.thread
 
@@ -32,7 +32,7 @@ class VoiceImeService : InputMethodService() {
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private val recorder = Recorder()
-    private var mnnBackend: MnnAsrBackend? = null
+    private var sherpaBackend: SherpaAsrBackend? = null
 
     // 长按退格连续删除
     private val backspaceHandler = Handler(Looper.getMainLooper())
@@ -271,8 +271,8 @@ class VoiceImeService : InputMethodService() {
         return when (Prefs.getEngine(this)) {
             Prefs.ENGINE_LAN_ONLY -> lanOrNull()
             else -> {
-                val mnn = mnnBackend()
-                if (mnn.isAvailable()) mnn
+                val sherpa = sherpaBackend()
+                if (sherpa.isAvailable()) sherpa
                 else {
                     toast("端侧模型未就绪，已降级到局域网转写")
                     lanOrNull()
@@ -281,11 +281,11 @@ class VoiceImeService : InputMethodService() {
         }
     }
 
-    private fun mnnBackend(): MnnAsrBackend {
-        var b = mnnBackend
+    private fun sherpaBackend(): SherpaAsrBackend {
+        var b = sherpaBackend
         if (b == null) {
-            b = MnnAsrBackend(applicationContext)
-            mnnBackend = b
+            b = SherpaAsrBackend(applicationContext)
+            sherpaBackend = b
         }
         return b
     }
@@ -297,7 +297,7 @@ class VoiceImeService : InputMethodService() {
     override fun onDestroy() {
         backspaceRepeating = false
         backspaceHandler.removeCallbacks(backspaceRepeat)
-        try { mnnBackend?.release() } catch (_: Exception) {}
+        try { sherpaBackend?.release() } catch (_: Exception) {}
         super.onDestroy()
     }
 }
