@@ -215,7 +215,9 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
                 modelConfig = modelCfg
                 decodingMethod = "greedy_search"
             }
-            val rec = OfflineRecognizer(appCtx.assets, config)
+            // 注意：用绝对路径加载模型时，AssetManager 必须传 null，否则 sherpa-onnx 会 FATAL
+            // （见 https://github.com/k2-fsa/sherpa-onnx/issues/2562）
+            val rec = OfflineRecognizer(null, config)
             Log.i(TAG, "[sherpa] model loaded in ${SystemClock.elapsedRealtime() - t0}ms")
             recognizer = rec
             return rec
