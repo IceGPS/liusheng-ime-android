@@ -38,13 +38,14 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
         /** 模型根目录：<filesDir>/models/sense-voice-small/ */
         fun modelDir(ctx: Context): File = File(File(ctx.filesDir, "models"), MODEL_DIR_NAME)
 
-        /** 模型是否就绪：model.int8.onnx + tokens.txt 存在且非空 */
+        /** 模型是否就绪：model.int8.onnx + tokens.txt 存在且大小合理（防止加载未下载完的文件） */
         fun isModelReady(ctx: Context): Boolean {
             val dir = modelDir(ctx)
-            return listOf(MODEL_FILE, TOKENS_FILE).all { name ->
-                val f = File(dir, name)
-                f.isFile && f.length() > 0L
-            }
+            val modelFile = File(dir, MODEL_FILE)
+            val tokensFile = File(dir, TOKENS_FILE)
+            // model.int8.onnx 约 228MB，tokens.txt 约 308KB；小于阈值视为未下载完
+            return modelFile.isFile && modelFile.length() > 200L * 1024 * 1024 &&
+                   tokensFile.isFile && tokensFile.length() > 100L * 1024
         }
     }
 
@@ -67,6 +68,7 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
             }
             val modelCfg = OfflineModelConfig().apply {
                 senseVoice = senseVoiceConfig
+                tokens = File(dir, TOKENS_FILE).absolutePath
                 numThreads = 4
             }
             val config = OfflineRecognizerConfig().apply {
