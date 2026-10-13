@@ -48,7 +48,8 @@ object TranscriptLogger {
     }
 
     /**
-     * 保存一次转写：写 WAV + append JSONL。
+     * 保存一次转写：写 AAC + append JSONL。
+     * 文件名规则（对标 CapsWriter）：(20261013-153022)文本前15字.m4a
      * @param pcm 16kHz 16-bit mono PCM
      * @param text 识别结果
      * @param engine "ondevice" 或 "lan"
@@ -58,11 +59,15 @@ object TranscriptLogger {
         try {
             val now = Date()
             val dp = datePath(now)
-            val timeStr = SimpleDateFormat("HHmmss", Locale.US).format(now)
+            val timeStr = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(now)
+
+            // 文件名：(时间戳)文本前15字，非法字符替换为空格
+            val textClean = text.take(15).replace(Regex("[\\\\/:\"*?<>|]"), " ").trim()
+            val fileName = "($timeStr)$textClean.m4a"
 
             // 1. 保存 AAC (M4A)
             val recDir = File(baseDir(), "recordings/$dp").apply { mkdirs() }
-            val aacFile = File(recDir, "$timeStr.m4a")
+            val aacFile = File(recDir, fileName)
             writeAac(aacFile, pcm)
 
             // 2. Append JSONL
@@ -71,7 +76,7 @@ object TranscriptLogger {
             val jsonlFile = File(logDir, "$dateStr.jsonl")
             val entry = JSONObject().apply {
                 put("ts", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(now))
-                put("audio", "recordings/$dp/$timeStr.m4a")
+                put("audio", "recordings/$dp/$fileName")
                 put("text", text)
                 put("engine", engine)
                 put("dur_ms", durMs)
