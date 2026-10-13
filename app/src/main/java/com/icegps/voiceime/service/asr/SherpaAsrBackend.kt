@@ -46,6 +46,14 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
             "voice-ime-models/$MODEL_DIR_NAME"
         )
 
+        /** 模型文件总大小（字节），用于 UI 显示 */
+        fun modelSizeBytes(ctx: Context): Long {
+            val dir = modelDir(ctx)
+            return listOf(MODEL_FILE, TOKENS_FILE).sumOf { name ->
+                File(dir, name).takeIf { it.isFile }?.length() ?: 0L
+            }
+        }
+
         /** 模型是否就绪：model.int8.onnx + tokens.txt 存在且大小合理（防止加载未下载完的文件） */
         fun isModelReady(ctx: Context): Boolean {
             val dir = modelDir(ctx)

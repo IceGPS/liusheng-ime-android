@@ -15,7 +15,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.icegps.voiceime.service.ModelDownloader
-import com.icegps.voiceime.service.asr.MnnAsrBackend
+import com.icegps.voiceime.service.asr.SherpaAsrBackend
 import com.icegps.voiceime.util.Prefs
 
 /**
@@ -143,8 +143,8 @@ class SettingsActivity : Activity() {
     // ---------- 模型状态 ----------
 
     private fun refreshModelStatus() {
-        val ready = Prefs.isModelReady(this) && MnnAsrBackend.isModelReady(this)
-        val sizeMb = MnnAsrBackend.modelSizeBytes(this) / 1024 / 1024
+        val ready = Prefs.isModelReady(this) && SherpaAsrBackend.isModelReady(this)
+        val sizeMb = SherpaAsrBackend.modelSizeBytes(this) / 1024 / 1024
         modelStatus.text = when {
             ready -> "模型状态：已就绪（${sizeMb}MB）"
             sizeMb > 0 -> "模型状态：下载不完整（${sizeMb}MB），请重新下载"
