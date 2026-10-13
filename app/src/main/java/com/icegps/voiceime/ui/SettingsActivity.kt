@@ -24,7 +24,7 @@ import com.icegps.voiceime.util.Prefs
  * V2 新增：
  *  - 转写引擎：端侧优先（默认）/ 仅局域网
  *  - 端侧模型状态：未下载 / 下载中 x% / 已就绪（大小）
- *  - 手动下载 / 重新下载按钮（仅 WiFi，~826MB，SHA256 校验）
+ *  - 手动下载 / 重新下载按钮（仅 WiFi，~230MB，SHA256 校验）
  */
 class SettingsActivity : Activity() {
 
@@ -73,7 +73,7 @@ class SettingsActivity : Activity() {
         root.addView(engineGroup)
 
         // ---------- 端侧模型 ----------
-        root.addView(sectionTitle("端侧模型（Qwen3-ASR-0.6B INT8，约 826MB）"))
+        root.addView(sectionTitle("端侧模型（SenseVoice-Small INT8，约 230MB）"))
         modelStatus = label("")
         root.addView(modelStatus)
         modelProgressText = label("")
@@ -161,7 +161,7 @@ class SettingsActivity : Activity() {
             return
         }
         if (!ModelDownloader.isWifiConnected(this)) {
-            toast("请连接 WiFi 后下载（模型约 826MB）")
+            toast("请连接 WiFi 后下载（模型约 230MB）")
             return
         }
         val url = modelUrlEdit.text.toString().trim()
