@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
-import com.icegps.voiceime.service.asr.MnnAsrBackend
+import com.icegps.voiceime.service.asr.SherpaAsrBackend
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -60,29 +60,32 @@ object ModelDownloader {
     fun downloadAll(ctx: Context, baseUrl: String, listener: ProgressListener) {
         val base = baseUrl.trim().trimEnd('/')
         require(base.isNotEmpty()) { "模型下载地址未配置" }
-        val dir = MnnAsrBackend.modelDir(ctx).apply { mkdirs() }
+        val dir = SherpaAsrBackend.modelDir(ctx).apply { mkdirs() }
 
         val client = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS) // 大文件：读超时禁用，靠进度推进
             .build()
         try {
-            val manifest = fetchManifest(client, "$base/$SUMS_FILE")
-            require(manifest.isNotEmpty()) { "模型清单为空：$base/$SUMS_FILE" }
-            Log.i(TAG, "[model] manifest: ${manifest.size} files from $base")
+            // 优先用 SHA256SUMS 清单；没有清单时（如 HuggingFace）用内置文件列表直接下载
+            val manifest = try {
+                fetchManifest(client, "$base/$SUMS_FILE").also {
+                    require(it.isNotEmpty()) { "模型清单为空" }
+                    Log.i(TAG, "[model] manifest: ${it.size} files from $base")
+                }
+            } catch (e: Exception) {
+                Log.i(TAG, "[model] 无 SHA256SUMS 清单，直接下载已知文件：${e.message}")
+                listOf(
+                    ManifestEntry("model.int8.onnx", ""),
+                    ManifestEntry("tokens.txt", ""),
+                )
+            }
 
             manifest.forEachIndexed { i, entry ->
                 // 文件名只取 basename，防止清单里的路径穿越
                 val safeName = File(entry.name).name
                 require(safeName.isNotEmpty() && !entry.name.contains("..")) {
                     "非法文件名：${entry.name}"
-                }
-                // config.json 是 App 生成的 MNN 运行时配置（见 MnnAsrBackend.ensureConfigJson），
-                // 绝不能用 HF 仓库的 config.json 覆盖 —— manifest 里若有，直接跳过。
-                if (safeName.equals("config.json", ignoreCase = true)) {
-                    Log.i(TAG, "[model] 跳过 manifest 中的 config.json（App 生成运行时配置）")
-                    listener.onProgress(safeName, 1, 1, i + 1, manifest.size)
-                    return@forEachIndexed
                 }
                 val tmp = File(dir, "$safeName.tmp")
                 val final = File(dir, safeName)
@@ -95,10 +98,13 @@ object ModelDownloader {
                 downloadFile(client, "$base/$safeName", tmp) { done, total ->
                     listener.onProgress(safeName, done, total, i + 1, manifest.size)
                 }
-                val actual = sha256Of(tmp)
-                if (!actual.equals(entry.sha256, ignoreCase = true)) {
-                    tmp.delete()
-                    throw IllegalStateException("$safeName 校验失败：SHA256 不匹配（文件已删除）")
+                // 有 SHA256 时校验；无清单（如 HuggingFace）时跳过校验
+                if (entry.sha256.isNotEmpty()) {
+                    val actual = sha256Of(tmp)
+                    if (!actual.equals(entry.sha256, ignoreCase = true)) {
+                        tmp.delete()
+                        throw IllegalStateException("$safeName 校验失败：SHA256 不匹配（文件已删除）")
+                    }
                 }
                 if (final.exists()) final.delete()
                 if (!tmp.renameTo(final)) {
@@ -108,8 +114,7 @@ object ModelDownloader {
                 Log.i(TAG, "[model] $safeName OK (${final.length()} bytes)")
             }
 
-            // 全部就绪：生成运行时配置
-            MnnAsrBackend.ensureConfigJson(ctx)
+            // 全部就绪
             Log.i(TAG, "[model] all files ready in ${dir.absolutePath}")
         } finally {
             client.dispatcher.executorService.shutdown()
@@ -118,7 +123,7 @@ object ModelDownloader {
 
     /** 取消下载后清理 .tmp 残留 */
     fun cleanTemp(ctx: Context) {
-        MnnAsrBackend.modelDir(ctx).listFiles { f -> f.name.endsWith(".tmp") }
+        SherpaAsrBackend.modelDir(ctx).listFiles { f -> f.name.endsWith(".tmp") }
             ?.forEach { it.delete() }
     }
 
