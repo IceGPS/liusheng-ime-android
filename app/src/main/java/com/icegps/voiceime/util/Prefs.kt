@@ -27,7 +27,7 @@ object Prefs {
      * GitHub Release: model-qwen3-asr-0.6b-int8
      * 需保证 `<baseUrl>/SHA256SUMS` 与 `<baseUrl>/<filename>` 可直接下载。
      */
-    const val DEFAULT_MODEL_URL = "https://github.com/IceGPS/voice-ime-android/releases/download/model-qwen3-asr-0.6b-int8"
+    const val DEFAULT_MODEL_URL = "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main"
 
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
