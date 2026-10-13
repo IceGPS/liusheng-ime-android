@@ -11,9 +11,9 @@ android {
         applicationId = "com.icegps.voiceime"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
+        versionCode = 16
         // V2：端侧转写（MNN Qwen3-ASR-0.6B INT8）+ 局域网备用
-        versionName = "0.14.0-v14"
+        versionName = "0.16.0-v16"
 
         // MNN native bridge：只在有 NDK 时编译（arm64-v8a）。
         // 无 NDK 的构建（如 Linux CI）跳过 native，APK 仍可编译安装，
@@ -84,4 +84,6 @@ fun hasNdk(): Boolean {
 dependencies {
     // WebSocket 客户端（复刻 Windows 端 websockets 库的行为，局域网转写用）
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // sherpa-onnx 端侧语音识别（预编译 AAR，app/libs/sherpa-onnx-*.aar）
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 }
