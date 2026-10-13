@@ -35,6 +35,77 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
         private const val MODEL_FILE = "model.int8.onnx"
         private const val TOKENS_FILE = "tokens.txt"
 
+        /**
+         * 已知-good 文件指纹（sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17 release，
+         * 与仓库 models/sense-voice-small/ 下的拷贝一致）。
+         * V22 新增：下载链路在无 SHA256SUMS 清单时（HuggingFace）不做任何校验，
+         * 残缺文件能通过 isModelReady 的大小门限（>200MB），随后在 new OfflineRecognizer
+         * 里以未捕获的 Ort::Exception 触发 SIGABRT（上游 issue #3019 同款闪退）。
+         * 在构造 recognizer 之前先验完整性：坏文件直接删掉并报可读错误，不再闪退。
+         */
+        private const val MODEL_SIZE = 239233841L
+        private const val MODEL_SHA256 = "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51"
+        private const val TOKENS_SIZE = 315894L
+        private const val TOKENS_SHA256 = "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
+
+        /** 进程内缓存：完整性已验证通过后不再重复算 SHA256（228MB 在手机上约 2~3 秒） */
+        @Volatile private var integrityOk = false
+
+        /**
+         * 校验模型完整性。大小必查；SHA256 每个进程只算一次。
+         * @throws IllegalStateException 文件缺失/损坏（调用方 toast 展示，不闪退）
+         */
+        @Throws(IllegalStateException::class)
+        fun verifyModelIntegrity(ctx: Context) {
+            if (integrityOk) return
+            val dir = modelDir(ctx)
+            val modelFile = File(dir, MODEL_FILE)
+            val tokensFile = File(dir, TOKENS_FILE)
+            Log.i(TAG, "[sherpa] integrity check: model=${modelFile.length()}/$MODEL_SIZE bytes, " +
+                    "tokens=${tokensFile.length()}/$TOKENS_SIZE bytes")
+            if (modelFile.length() != MODEL_SIZE || tokensFile.length() != TOKENS_SIZE) {
+                dropBadFiles(ctx, modelFile, tokensFile)
+                throw IllegalStateException("模型文件不完整已删除，请在设置中重新下载")
+            }
+            if (sha256Of(modelFile) != MODEL_SHA256 || sha256Of(tokensFile) != TOKENS_SHA256) {
+                dropBadFiles(ctx, modelFile, tokensFile)
+                throw IllegalStateException("模型文件校验失败已删除，请在设置中重新下载")
+            }
+            integrityOk = true
+            Log.i(TAG, "[sherpa] integrity check passed")
+        }
+
+        private fun dropBadFiles(ctx: Context, vararg files: File) {
+            integrityOk = false
+            files.forEach { f ->
+                try { if (f.exists() && !f.delete()) Log.w(TAG, "[sherpa] 删除坏文件失败：$f") }
+                catch (e: Exception) { Log.w(TAG, "[sherpa] 删除坏文件异常", e) }
+            }
+            // 损坏的备份也没有保留价值，避免 restoreFromBackup 又把它拷回来
+            try {
+                val bak = File(backupDir(), MODEL_FILE)
+                if (bak.exists() && bak.length() != MODEL_SIZE && !bak.delete())
+                    Log.w(TAG, "[sherpa] 删除坏备份失败")
+                val bakT = File(backupDir(), TOKENS_FILE)
+                if (bakT.exists() && bakT.length() != TOKENS_SIZE && !bakT.delete())
+                    Log.w(TAG, "[sherpa] 删除坏备份失败")
+            } catch (e: Exception) { Log.w(TAG, "[sherpa] 清理备份异常", e) }
+            try { com.icegps.voiceime.util.Prefs.setModelReady(ctx, false) } catch (_: Exception) {}
+        }
+
+        private fun sha256Of(file: File): String {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(256 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    md.update(buf, 0, n)
+                }
+            }
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
+
         /** 模型根目录：<filesDir>/models/sense-voice-small/ */
         fun modelDir(ctx: Context): File = File(File(ctx.filesDir, "models"), MODEL_DIR_NAME)
 
@@ -121,6 +192,9 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
         synchronized(initLock) {
             recognizer?.let { return it }
             if (!isModelReady(appCtx)) throw IllegalStateException("端侧模型文件未就绪")
+            // V22：先验完整性。坏文件在这里拦截（删掉+抛可读错误），
+            // 避免 new OfflineRecognizer 里未捕获的 Ort::Exception 直接 SIGABRT 闪退。
+            verifyModelIntegrity(appCtx)
             val dir = modelDir(appCtx)
             Log.i(TAG, "[sherpa] loading model from ${dir.absolutePath} ...")
             val t0 = SystemClock.elapsedRealtime()
