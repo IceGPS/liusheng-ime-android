@@ -48,10 +48,19 @@ class VoiceImeService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         val ctx = this
+        // 跟随系统深浅色
+        val isDark = (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val bgColor = if (isDark) 0xFF1C1C1E.toInt() else 0xFFF2F2F7.toInt()
+        val btnColor = if (isDark) 0xFF2C2C2E.toInt() else 0xFFFFFFFF.toInt()
+        val textColor = if (isDark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+
         // 外层垂直布局：符号行、数字行（可折叠，默认关闭）、主输入行
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            setBackgroundColor(bgColor)
         }
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -60,21 +69,23 @@ class VoiceImeService : InputMethodService() {
 
         // 数字/标点区开关：最左边，空心上箭头
         val numpadToggleBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
             text = if (Prefs.isNumPadExpanded(ctx)) "⇩" else "⇧"
             textSize = 20f
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                marginEnd = dp(8)
+                marginEnd = dp(2)
             }
         }
 
         // 语音键：按住录音，松开转写
         val voiceBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
             text = "🎤 按住说话"
             textSize = 16f
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 2f).apply {
-                marginEnd = dp(8)
+                marginEnd = dp(2)
             }
         }
         this.voiceBtn = voiceBtn
@@ -110,11 +121,12 @@ class VoiceImeService : InputMethodService() {
 
         // 退格键：点按删一个，长按连续删
         val backBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
             text = "⌫"
             textSize = 22f
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                marginEnd = dp(8)
+                marginEnd = dp(2)
             }
         }
         backBtn.setOnTouchListener { v, event ->
@@ -139,11 +151,12 @@ class VoiceImeService : InputMethodService() {
 
         // 设置键：打开设置页（放最左：切换服务端/端侧模型）
         val settingsBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
             text = "⚙️"
             textSize = 22f
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                marginEnd = dp(8)
+                marginEnd = dp(2)
             }
         }
         settingsBtn.setOnTouchListener { v, event ->
@@ -171,11 +184,12 @@ class VoiceImeService : InputMethodService() {
 
         // 切回上一个输入法
         val switchBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
             text = "🌐"
             textSize = 22f
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                marginEnd = dp(8)
+                marginEnd = dp(2)
             }
         }
         switchBtn.setOnTouchListener { v, event ->
@@ -201,6 +215,7 @@ class VoiceImeService : InputMethodService() {
 
         // 回车键：换行（放最右）
         val enterBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
             text = "⏎"
             textSize = 22f
             isHapticFeedbackEnabled = true
@@ -246,11 +261,13 @@ class VoiceImeService : InputMethodService() {
         }
         fun makeCharBtn(ch: String): Button {
             val b = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
+            styleBtn(this, btnColor, textColor)
                 text = ch
                 textSize = 18f
                 isHapticFeedbackEnabled = true
                 layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-                    marginEnd = dp(4)
+                    marginEnd = dp(1)
                 }
             }
             b.setOnTouchListener { v, event ->
@@ -315,6 +332,12 @@ class VoiceImeService : InputMethodService() {
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    /** 根据深浅色给按钮上样式 */
+    private fun styleBtn(b: Button, btnColor: Int, textColor: Int) {
+        b.setBackgroundColor(btnColor)
+        b.setTextColor(textColor)
+    }
 
     private var voiceBtn: Button? = null
 
