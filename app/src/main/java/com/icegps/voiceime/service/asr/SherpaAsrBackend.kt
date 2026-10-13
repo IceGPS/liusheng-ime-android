@@ -123,9 +123,11 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
                 senseVoice = senseVoiceConfig
                 tokens = File(dir, TOKENS_FILE).absolutePath
                 numThreads = 4
+                provider = "cpu"
             }
             val config = OfflineRecognizerConfig().apply {
                 modelConfig = modelCfg
+                decodingMethod = "greedy_search"
             }
             val rec = OfflineRecognizer(appCtx.assets, config)
             Log.i(TAG, "[sherpa] model loaded in ${SystemClock.elapsedRealtime() - t0}ms")
