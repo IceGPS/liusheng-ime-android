@@ -110,6 +110,52 @@ class SettingsActivity : Activity() {
 
         // ---------- 服务端（局域网备用） ----------
         root.addView(sectionTitle("局域网服务端（备用）"))
+
+        // mDNS 自动发现
+        val mdnsStatus = label("未搜索")
+        val mdnsBtn = Button(this).apply {
+            text = "🔍 搜索局域网服务端"
+            setOnClickListener {
+                text = "搜索中…"
+                isEnabled = false
+                val discovery = com.icegps.voiceime.service.MdnsDiscovery(this@SettingsActivity)
+                discovery.start { servers ->
+                    runOnUiThread {
+                        isEnabled = true
+                        text = "🔍 搜索局域网服务端"
+                        if (servers.isEmpty()) {
+                            mdnsStatus.text = "未发现服务端（PC 端需先发布 mDNS 服务）"
+                        } else {
+                            // 自动选第一个，填入 IP/端口
+                            val s = servers[0]
+                            hostEdit.setText(s.host)
+                            portEdit.setText(s.port.toString())
+                            Prefs.setHost(this@SettingsActivity, s.host)
+                            Prefs.setPort(this@SettingsActivity, s.port)
+                            mdnsStatus.text = "发现 ${servers.size} 台：${servers.joinToString { "${it.name}(${it.host}:${it.port})" }}，已自动填入第一台"
+                            toast("已填入 ${s.name}")
+                        }
+                        discovery.stop()
+                    }
+                }
+                // 10 秒超时
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    runOnUiThread {
+                        if (!isEnabled) {
+                            isEnabled = true
+                            text = "🔍 搜索局域网服务端"
+                            if (mdnsStatus.text.toString() == "未搜索") {
+                                mdnsStatus.text = "搜索超时，未发现服务端"
+                            }
+                            discovery.stop()
+                        }
+                    }
+                }, 10000)
+            }
+        }
+        root.addView(mdnsBtn)
+        root.addView(mdnsStatus)
+
         root.addView(label("PC 服务端 IP（手机与 PC 在同一 WiFi）："))
         hostEdit = EditText(this).apply {
             hint = "例如 192.168.1.100"
