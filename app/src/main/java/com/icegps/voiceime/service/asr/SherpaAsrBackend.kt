@@ -57,8 +57,10 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
         /** 模型是否就绪：model.int8.onnx + tokens.txt 存在且大小合理（防止加载未下载完的文件） */
         fun isModelReady(ctx: Context): Boolean {
             val dir = modelDir(ctx)
-            val modelFile = File(dir, MODEL_FILE)
-            val tokensFile = File(dir, TOKENS_FILE)
+            return isFilesReady(File(dir, MODEL_FILE), File(dir, TOKENS_FILE))
+        }
+
+        private fun isFilesReady(modelFile: File, tokensFile: File): Boolean {
             // model.int8.onnx 约 228MB，tokens.txt 约 308KB；小于阈值视为未下载完
             return modelFile.isFile && modelFile.length() > 200L * 1024 * 1024 &&
                    tokensFile.isFile && tokensFile.length() > 100L * 1024
@@ -79,6 +81,8 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
                 val dir = modelDir(ctx).apply { mkdirs() }
                 modelBak.copyTo(File(dir, MODEL_FILE), overwrite = true)
                 tokensBak.copyTo(File(dir, TOKENS_FILE), overwrite = true)
+                // 恢复成功后更新 Prefs 标记，界面才能显示"已就绪"
+                com.icegps.voiceime.util.Prefs.setModelReady(ctx, true)
                 Log.i(TAG, "[sherpa] 模型已从备份恢复，无需重新下载")
                 true
             } catch (e: Exception) {

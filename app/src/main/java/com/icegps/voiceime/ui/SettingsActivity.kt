@@ -143,6 +143,10 @@ class SettingsActivity : Activity() {
     // ---------- 模型状态 ----------
 
     private fun refreshModelStatus() {
+        // 先尝试从备份恢复（卸载重装后自动恢复，无需重新下载）
+        if (!SherpaAsrBackend.isModelReady(this)) {
+            SherpaAsrBackend.restoreFromBackup(this)
+        }
         val ready = Prefs.isModelReady(this) && SherpaAsrBackend.isModelReady(this)
         val sizeMb = SherpaAsrBackend.modelSizeBytes(this) / 1024 / 1024
         modelStatus.text = when {
