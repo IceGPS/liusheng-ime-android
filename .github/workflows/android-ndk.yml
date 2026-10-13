@@ -84,7 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p app/libs
-          SHERPA_VERSION="1.13.6"
+          SHERPA_VERSION="1.13.8"
           SHERPA_AAR="app/libs/sherpa-onnx-${SHERPA_VERSION}.aar"
           if [ ! -f "$SHERPA_AAR" ]; then
             echo "Downloading sherpa-onnx AAR v${SHERPA_VERSION}..."
