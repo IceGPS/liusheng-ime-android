@@ -340,8 +340,8 @@ class VoiceImeService : InputMethodService() {
         for (ch in listOf("+","-","×","÷","=","%","，","。","？","_")) {
             symbolRow.addView(makeCharBtn(ch))
         }
-        // 第二行 10 个数字：0-9
-        for (ch in listOf("0","1","2","3","4","5","6","7","8","9")) {
+        // 第二行 10 个数字：1-0（与拼音键盘上标顺序一致）
+        for (ch in listOf("1","2","3","4","5","6","7","8","9","0")) {
             digitRow.addView(makeCharBtn(ch))
         }
 
