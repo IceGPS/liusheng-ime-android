@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.Toast
 import com.icegps.voiceime.ime.pinyin.CandidateBarView
@@ -22,6 +23,7 @@ import com.icegps.voiceime.service.asr.LanAsrBackend
 import com.icegps.voiceime.service.asr.SherpaAsrBackend
 import com.icegps.voiceime.util.Prefs
 import kotlin.concurrent.thread
+import kotlin.math.abs
 
 /**
  * 极简语音输入法。
@@ -295,21 +297,42 @@ class VoiceImeService : InputMethodService() {
         row.addView(backBtn)
         row.addView(enterBtn)
 
-        // 数字/标点区：两行，默认折叠，放在主输入行上面
-        // 第一行：加减乘除，等号，百分号，逗号，句号，问号，下划线
+        // 符号/数字区：HorizontalScrollView 包裹 LinearLayout，支持左右滑动
+        // 两行默认折叠，点 ⇧ 展开/收起，状态持久化
+        val symbolScroll = HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+            visibility = if (Prefs.isNumPadExpanded(ctx)) View.VISIBLE else View.GONE
+            setPadding(0, 0, 0, dp(4))
+        }
+        // 第一行：常用符号（加减乘除等号百分号已挪到数字区）
         val symbolRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+        }
+        symbolScroll.addView(
+            symbolRow,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        // 第二行：数字 + 数学符号
+        val digitScroll = HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
             visibility = if (Prefs.isNumPadExpanded(ctx)) View.VISIBLE else View.GONE
             setPadding(0, 0, 0, dp(4))
         }
-        // 第二行：0-9 数字
         val digitRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            visibility = if (Prefs.isNumPadExpanded(ctx)) View.VISIBLE else View.GONE
-            setPadding(0, 0, 0, dp(4))
         }
+        digitScroll.addView(
+            digitRow,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
         fun makeCharBtn(ch: String): Button {
             val b = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
@@ -317,7 +340,8 @@ class VoiceImeService : InputMethodService() {
                 text = ch
                 textSize = 18f
                 isHapticFeedbackEnabled = true
-                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                // 滑动行内用固定宽度（weight 在 ScrollView 里不生效）
+                layoutParams = LinearLayout.LayoutParams(dp(52), dp(48)).apply {
                     marginEnd = dp(1)
                 }
             }
@@ -338,12 +362,12 @@ class VoiceImeService : InputMethodService() {
             }
             return b
         }
-        // 第一行 10 个符号：+ - × ÷ = % ，。？ _
-        for (ch in listOf("+","-","×","÷","=","%","，","。","？","_")) {
+        // 第一行符号：中英文常用标点（点按上屏后不自动收起，方便连续输入）
+        for (ch in listOf("，","。","？","_","$","@","#","'","\"",";","!",":","、","…","—","·","～")) {
             symbolRow.addView(makeCharBtn(ch))
         }
-        // 第二行 10 个数字：1-0（与拼音键盘上标顺序一致）
-        for (ch in listOf("1","2","3","4","5","6","7","8","9","0")) {
+        // 第二行：数字 1-0 + 数学符号（与拼音键盘上标数字顺序一致）
+        for (ch in listOf("1","2","3","4","5","6","7","8","9","0","+","-","×","÷","=","%",">","<","(",")",".",",")) {
             digitRow.addView(makeCharBtn(ch))
         }
 
@@ -353,15 +377,15 @@ class VoiceImeService : InputMethodService() {
                 MotionEvent.ACTION_DOWN -> {
                     v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    val expanded = symbolRow.visibility == View.VISIBLE
+                    val expanded = symbolScroll.visibility == View.VISIBLE
                     if (expanded) {
-                        symbolRow.visibility = View.GONE
-                        digitRow.visibility = View.GONE
+                        symbolScroll.visibility = View.GONE
+                        digitScroll.visibility = View.GONE
                         (v as Button).text = "⇧"
                         Prefs.setNumPadExpanded(ctx, false)
                     } else {
-                        symbolRow.visibility = View.VISIBLE
-                        digitRow.visibility = View.VISIBLE
+                        symbolScroll.visibility = View.VISIBLE
+                        digitScroll.visibility = View.VISIBLE
                         (v as Button).text = "⇩"
                         Prefs.setNumPadExpanded(ctx, true)
                     }
@@ -375,9 +399,91 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 语音模式三行装进 voiceBox
-        voiceBox.addView(symbolRow)
-        voiceBox.addView(digitRow)
+        // 空格键行：放在数字区下方、主行上方，全宽空格键
+        // 中央 🎤 热区（56dp）：按住录音，松开转写上屏（与拼音键盘空格键一致）
+        // 其他区域：点按输入空格
+        val spaceRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(4))
+        }
+        val spaceBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
+            text = "🎤"
+            textSize = 20f
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f)
+        }
+        // 空格键触摸状态机：DOWN 瞬间判定是否落在 mic 热区
+        var spaceRecording = false   // 当前这次触摸是否在录音
+        var spaceTapValid = false    // 当前这次触摸是否有效点按（输入空格）
+        var spaceDownX = 0f
+        spaceBtn.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    val halfHot = dp(28).toFloat() // 56dp 热区的一半
+                    if (abs(event.x - v.width / 2f) <= halfHot) {
+                        // 按住麦克风：开始录音，红色背景反馈
+                        if (startRecording()) {
+                            spaceRecording = true
+                            v.setBackgroundColor(0xFFE53935.toInt())
+                        }
+                        spaceTapValid = false
+                    } else {
+                        // 其他区域：可能是输入空格的点按
+                        spaceRecording = false
+                        spaceTapValid = true
+                        spaceDownX = event.x
+                        v.alpha = 0.5f
+                    }
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    // 录音中手指滑出热区也继续录（与拼音键盘一致）；
+                    // 点按则滑出 10dp 即取消，避免误触
+                    if (!spaceRecording && spaceTapValid &&
+                        abs(event.x - spaceDownX) > dp(10)) {
+                        spaceTapValid = false
+                        v.alpha = 1f
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (spaceRecording) {
+                        spaceRecording = false
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                        v.setBackgroundColor(btnColor)
+                        stopAndTranscribe()
+                    } else {
+                        v.alpha = 1f
+                        if (spaceTapValid) {
+                            currentInputConnection?.commitText(" ", 1)
+                        }
+                        spaceTapValid = false
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    // 手势被系统中断：停止录音或取消点按
+                    if (spaceRecording) {
+                        spaceRecording = false
+                        v.setBackgroundColor(btnColor)
+                        stopAndTranscribe()
+                    } else {
+                        v.alpha = 1f
+                        spaceTapValid = false
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+        spaceRow.addView(spaceBtn)
+
+        // 语音模式各行装进 voiceBox：符号区、数字区、空格键、主行
+        voiceBox.addView(symbolScroll)
+        voiceBox.addView(digitScroll)
+        voiceBox.addView(spaceRow)
         voiceBox.addView(row)
 
         // 拼音键盘（默认隐藏）
@@ -515,10 +621,11 @@ class VoiceImeService : InputMethodService() {
         stopAndTranscribe()
     }
 
-    private fun startRecording() {
+    /** 开始录音，返回是否成功启动 */
+    private fun startRecording(): Boolean {
         if (!recorder.start()) {
             toast("录音启动失败，请检查麦克风权限")
-            return
+            return false
         }
         recordStartMs = System.currentTimeMillis()
         uiHandler.post {
@@ -526,6 +633,7 @@ class VoiceImeService : InputMethodService() {
             // 红色背景提示录音中（与拼音键盘空格录音的红色圆底呼应）
             voiceBtn?.setBackgroundColor(0xFFE53935.toInt())
         }
+        return true
     }
 
     private fun stopAndTranscribe() {
