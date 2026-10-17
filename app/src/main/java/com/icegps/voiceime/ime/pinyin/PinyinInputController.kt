@@ -11,7 +11,7 @@ import android.view.inputmethod.InputConnection
  * - 拼音组合文本用 setComposingText 显示（下划线预编辑区）
  * - 选中候选词用 commitText 上屏
  * - 退格：有组合文本时先删拼音，无组合文本时 deleteSurroundingText
- * - 回车：有候选时上屏首选；无候选时 commitText("\n")
+ * - 回车：有组合文本时原样上屏拼音字母（不做汉字转换）；无组合文本时 commitText("\n")
  * - 空格：有组合文本时选首选；无组合文本时输入空格
  */
 class PinyinInputController(
@@ -180,11 +180,13 @@ class PinyinInputController(
     }
 
     private fun handleEnter() {
-        if (engine.getCandidates().isNotEmpty()) {
-            // 有候选时只上屏首选，不换行
-            selectCandidate(0)
-        } else {
+        val composing = engine.getComposingText()
+        if (composing.isNotEmpty()) {
+            // 回车直接上屏原始拼音字母（原封不动），不做拼音到汉字的转换
+            ic()?.commitText(composing, 1)
             engine.clear()
+            refresh()
+        } else {
             ic()?.commitText("\n", 1)
             refresh()
         }

@@ -282,6 +282,8 @@ class PinyinKeyboardView @JvmOverloads constructor(
 
         // 背景
         bgPaint.color = when {
+            // 录音中：整个空格键显示红色（与极简键盘空格键一致，手指遮挡也能看到）
+            k.action == Action.SPACE && voiceRecording -> 0xFFE53935.toInt()
             k === pressedKey -> pressedColor
             k.action == Action.SHIFT && (shifted || capsLock) -> accentColor
             k.isFunc -> funcBgColor
@@ -320,12 +322,9 @@ class PinyinKeyboardView @JvmOverloads constructor(
         }
     }
 
-    /** 空格中央的麦克风图标（emoji），同时更新可点热区；录音中显示红色圆底 */
+    /** 空格中央的麦克风图标（emoji），同时更新可点热区 */
     private fun drawMicIcon(canvas: Canvas, r: RectF) {
-        if (voiceRecording) {
-            bgPaint.color = 0xFFE53935.toInt()
-            canvas.drawCircle(r.centerX(), r.centerY(), dp(20).toFloat(), bgPaint)
-        }
+        // 录音中的红色反馈已由 drawKey 把整个空格键染红，这里只画图标
         emojiPaint.textSize = sp(22f)
         canvas.drawText("🎤", r.centerX(), textBaseline(r, emojiPaint), emojiPaint)
         val s = dp(56).toFloat()
