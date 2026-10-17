@@ -428,7 +428,7 @@ class VoiceImeService : InputMethodService() {
 
     /** 切回语音键行，状态持久化 */
     private fun showVoiceKeyboard() {
-        currentInputConnection?.finishComposing()
+        currentInputConnection?.finishComposingText()
         pinyinController?.reset()
         pinyinKeyboard?.visibility = View.GONE
         candidateBar?.visibility = View.GONE

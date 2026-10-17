@@ -87,11 +87,10 @@ class KotlinPinyinEngine(
         if (buffer.isEmpty()) return emptyList()
         return when (mode) {
             Mode.QUANPIN -> {
-                // 全拼：取最优切分（音节数最少）
+                // 全拼：取最优切分（音节数最少的前3种）
                 val segs = PinyinSyllables.segment(buffer.toString())
                 if (segs.isEmpty()) return emptyList()
-                // 返回前3种切分，每种切分的每个音节是单元素列表
-                segs.take(3).map { seg -> seg.map { listOf(it) } }
+                segs.take(3)
             }
             Mode.XIAOHE -> {
                 // 双拼：每两键一组，每组可能对应多个音节

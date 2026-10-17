@@ -80,7 +80,7 @@ class PinyinInputController(
         if (composing.isNotEmpty()) {
             conn.setComposingText(composing, 1)
         } else {
-            conn.finishComposing()
+            conn.finishComposingText()
         }
     }
 
@@ -157,7 +157,7 @@ class PinyinInputController(
 
     private fun switchToVoice() {
         engine.clear()
-        ic()?.finishComposing()
+        ic()?.finishComposingText()
         refresh()
         onSwitchToVoice()
     }
