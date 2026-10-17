@@ -106,6 +106,8 @@ class VoiceImeService : InputMethodService() {
             }
         }
         this.voiceBtn = voiceBtn
+        // 保存原始背景色，用于录音结束恢复
+        voiceBtnOrigBgColor = btnColor
         voiceBtn.setOnTouchListener { v, event ->
             val vadEnabled = Prefs.isVadEnabled(this)
             when (event.action) {
@@ -455,6 +457,9 @@ class VoiceImeService : InputMethodService() {
 
     private var voiceBtn: Button? = null
 
+    /** 语音按钮原始背景色（录音时变红提示，结束后恢复） */
+    private var voiceBtnOrigBgColor: Int = 0
+
     private var recordStartMs: Long = 0
     private var isVadRecording = false
     private var vadMonitorThread: Thread? = null
@@ -518,11 +523,17 @@ class VoiceImeService : InputMethodService() {
         recordStartMs = System.currentTimeMillis()
         uiHandler.post {
             voiceBtn?.text = "🎤 录音中…"
+            // 红色背景提示录音中（与拼音键盘空格录音的红色圆底呼应）
+            voiceBtn?.setBackgroundColor(0xFFE53935.toInt())
         }
     }
 
     private fun stopAndTranscribe() {
-        uiHandler.post { voiceBtn?.text = "🎤 按住说话" }
+        uiHandler.post {
+            voiceBtn?.text = "🎤 按住说话"
+            // 恢复原始背景色
+            voiceBtn?.setBackgroundColor(voiceBtnOrigBgColor)
+        }
         val pcm = recorder.stopAndGetPcm()
         if (pcm.isEmpty()) {
             toast("录音太短")

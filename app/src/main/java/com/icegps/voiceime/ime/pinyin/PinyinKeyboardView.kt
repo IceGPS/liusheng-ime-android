@@ -181,6 +181,20 @@ class PinyinKeyboardView @JvmOverloads constructor(
     /** 是否正在按住空格麦克风录音（用于图标变色 + 手势状态） */
     private var voiceRecording = false
 
+    /**
+     * 动态计算麦克风热区是否包含触摸点。
+     * 不依赖 drawMicIcon 更新的缓存 micHotRect，直接从空格键矩形实时计算，
+     * 避免折叠屏展开/折叠等尺寸变化时缓存不同步导致热区失效。
+     */
+    private fun isInMicHotZone(x: Float, y: Float): Boolean {
+        val spaceKey = row3.find { it.action == Action.SPACE } ?: return false
+        val s = dp(56).toFloat()
+        val cx = spaceKey.rect.centerX()
+        val cy = spaceKey.rect.centerY()
+        return x >= cx - s / 2 && x <= cx + s / 2 &&
+               y >= cy - s / 2 && y <= cy + s / 2
+    }
+
     init {
         // 键盘不需要焦点；触摸完全自己处理
         isFocusable = false
@@ -205,6 +219,8 @@ class PinyinKeyboardView @JvmOverloads constructor(
         // 键高按实际高度均分，保证 EXACTLY 模式下不变形
         keyH = (h - paddingTop - paddingBottom - rowGap * 3) / 4f
         layoutKeys()
+        // 折叠屏展开/折叠时尺寸变化，强制重绘以更新 micHotRect 等绘制期缓存
+        invalidate()
     }
 
     /** 计算每行每个键的矩形 */
@@ -379,9 +395,10 @@ class PinyinKeyboardView @JvmOverloads constructor(
                     // 点按立即删一个，长按连续删
                     listener?.onBackspace()
                     startBackspaceRepeat()
-                } else if (k.action == Action.SPACE && micHotRect.contains(x, y)) {
+                } else if (k.action == Action.SPACE && isInMicHotZone(x, y)) {
                     // 按住空格中央的麦克风图标：开始语音录音，松开结束
                     // （手指滑出热区仍继续录，直到 UP/CANCEL）
+                    // 热区动态计算，不依赖绘制缓存，折叠屏尺寸变化也有效
                     voiceRecording = true
                     listener?.onVoiceRecordStart()
                     invalidate()

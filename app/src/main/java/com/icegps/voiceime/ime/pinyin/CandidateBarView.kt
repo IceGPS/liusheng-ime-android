@@ -191,7 +191,9 @@ class CandidateBarView @JvmOverloads constructor(
             )
             val maxH = dp(44 + 5 * 56)
             val h = minOf(content.measuredHeight, maxH).coerceAtLeast(dp(100))
-            panelPopup = PopupWindow(content, width, h, true).apply {
+            panelPopup = PopupWindow(content, width, h, false).apply {
+                // focusable=false：可聚焦的 PopupWindow 在输入法窗口内会抢焦点，
+                // 导致 InputConnection 状态异常、setComposingText 失效回退为直接提交
                 // 点击外部关闭（必须配 background 才生效）
                 isOutsideTouchable = true
                 setBackgroundDrawable(ColorDrawable(0x00000000))
