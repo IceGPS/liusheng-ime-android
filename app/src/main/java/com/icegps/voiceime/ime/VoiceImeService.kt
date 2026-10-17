@@ -393,6 +393,9 @@ class VoiceImeService : InputMethodService() {
             attach(pinyinKeyboard, candidateBar)
             // 接入真实引擎（词典 + 小鹤双拼，替代桩实现）
             setEngine(EngineAdapter(ctx))
+            // 拼音键盘空格麦克风：按住录音、松开转写（与极简语音键盘同一套录音链路）
+            onVoiceRecordStart = { startRecording() }
+            onVoiceRecordStop = { stopAndTranscribe() }
         }
 
         // 顺序：候选栏、语音模式、拼音键盘

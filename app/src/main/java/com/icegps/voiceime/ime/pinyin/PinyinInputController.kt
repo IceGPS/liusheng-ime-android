@@ -42,6 +42,12 @@ class PinyinInputController(
      */
     var onExpandCandidates: (() -> Unit)? = null
 
+    /** 空格麦克风按住开始录音（由 VoiceImeService 接入 startRecording） */
+    var onVoiceRecordStart: (() -> Unit)? = null
+
+    /** 空格麦克风松开结束录音（由 VoiceImeService 接入 stopAndTranscribe） */
+    var onVoiceRecordStop: (() -> Unit)? = null
+
     /** 全部候选词（不截断，浮层面板用） */
     fun getAllCandidates(): List<String> = engine.getAllCandidates()
 
@@ -62,6 +68,12 @@ class PinyinInputController(
             override fun onDigitPage() = onToast("数字键盘第二阶段再做")
             override fun onSpace() = handleSpace()
             override fun onVoiceMode() = switchToVoice()
+            override fun onVoiceRecordStart() {
+                // 录音前先丢弃未完成的拼音组合，避免转写上屏时残留拼音字母
+                discardComposing()
+                onVoiceRecordStart?.invoke()
+            }
+            override fun onVoiceRecordStop() { onVoiceRecordStop?.invoke() }
         }
         bar.onToggleVoice = { switchToVoice() }
         bar.onCandidateClick = { selectCandidate(it) }
@@ -86,6 +98,19 @@ class PinyinInputController(
     /** 重置输入状态（输入结束 / 切换模式 / 切换中英文时调用） */
     fun reset() {
         engine.clear()
+        refresh()
+    }
+
+    /**
+     * 丢弃未完成的拼音组合，并清除编辑器中的组合文本（不留拼音字母）。
+     * 语音录音开始前调用，避免转写上屏时与残留拼音混在一起。
+     */
+    fun discardComposing() {
+        engine.clear()
+        ic()?.let {
+            it.setComposingText("", 1)
+            it.finishComposingText()
+        }
         refresh()
     }
 

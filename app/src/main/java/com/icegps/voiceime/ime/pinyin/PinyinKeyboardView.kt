@@ -63,8 +63,14 @@ class PinyinKeyboardView @JvmOverloads constructor(
         /** 空格键 */
         fun onSpace()
 
-        /** 空格上的麦克风图标：切回语音键行 */
+        /** ⌨️ 键：切回极简语音键盘 */
         fun onVoiceMode()
+
+        /** 空格中央麦克风图标：按住开始录音 */
+        fun onVoiceRecordStart()
+
+        /** 录音结束（松开手指 / 手势取消） */
+        fun onVoiceRecordStop()
     }
 
     var listener: Listener? = null
@@ -80,7 +86,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
 
     private enum class Action {
         LETTER, SHIFT, BACKSPACE, SYMBOL_PAGE, DIGIT_PAGE,
-        COMMA, SPACE, PERIOD, LANG, ENTER
+        COMMA, SPACE, PERIOD, LANG, ENTER, SWITCH_VOICE
     }
 
     private class Key(
@@ -123,7 +129,8 @@ class PinyinKeyboardView @JvmOverloads constructor(
         add(Key("符", null, Action.SYMBOL_PAGE, 1.3f, true))
         add(Key("123", null, Action.DIGIT_PAGE, 1.3f, true))
         add(Key(",", null, Action.COMMA, 0.9f, false))
-        add(Key("", null, Action.SPACE, 3.0f, false)) // 空格：绘制麦克风图标
+        add(Key("⌨️", null, Action.SWITCH_VOICE, 1.3f, true)) // 切回极简语音键盘
+        add(Key("", null, Action.SPACE, 3.0f, false)) // 空格：中央麦克风图标按住录音
         add(Key("。", null, Action.PERIOD, 0.9f, false))
         add(Key("中/英", null, Action.LANG, 1.3f, true))
         add(Key("⏎", null, Action.ENTER, 1.5f, true))
@@ -170,6 +177,9 @@ class PinyinKeyboardView @JvmOverloads constructor(
 
     /** 空格上麦克风图标的可点热区（绘制时更新） */
     private val micHotRect = RectF()
+
+    /** 是否正在按住空格麦克风录音（用于图标变色 + 手势状态） */
+    private var voiceRecording = false
 
     init {
         // 键盘不需要焦点；触摸完全自己处理
@@ -294,8 +304,12 @@ class PinyinKeyboardView @JvmOverloads constructor(
         }
     }
 
-    /** 空格中央的麦克风图标（emoji），同时更新可点热区 */
+    /** 空格中央的麦克风图标（emoji），同时更新可点热区；录音中显示红色圆底 */
     private fun drawMicIcon(canvas: Canvas, r: RectF) {
+        if (voiceRecording) {
+            bgPaint.color = 0xFFE53935.toInt()
+            canvas.drawCircle(r.centerX(), r.centerY(), dp(20).toFloat(), bgPaint)
+        }
         emojiPaint.textSize = sp(22f)
         canvas.drawText("🎤", r.centerX(), textBaseline(r, emojiPaint), emojiPaint)
         val s = dp(56).toFloat()
@@ -365,6 +379,12 @@ class PinyinKeyboardView @JvmOverloads constructor(
                     // 点按立即删一个，长按连续删
                     listener?.onBackspace()
                     startBackspaceRepeat()
+                } else if (k.action == Action.SPACE && micHotRect.contains(x, y)) {
+                    // 按住空格中央的麦克风图标：开始语音录音，松开结束
+                    // （手指滑出热区仍继续录，直到 UP/CANCEL）
+                    voiceRecording = true
+                    listener?.onVoiceRecordStart()
+                    invalidate()
                 }
                 return true
             }
@@ -385,7 +405,12 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 val k = pressedKey
                 stopBackspaceRepeat()
                 dismissPreview()
-                if (k != null) {
+                if (voiceRecording) {
+                    // 按住录音结束：不走点按逻辑，直接停止转写
+                    voiceRecording = false
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    listener?.onVoiceRecordStop()
+                } else if (k != null) {
                     if (swipeArmed && k.hint != null) {
                         listener?.onSymbol(k.hint[0])
                     } else {
@@ -400,6 +425,11 @@ class PinyinKeyboardView @JvmOverloads constructor(
             MotionEvent.ACTION_CANCEL -> {
                 stopBackspaceRepeat()
                 dismissPreview()
+                if (voiceRecording) {
+                    // 手势被系统取消：同样停止录音
+                    voiceRecording = false
+                    listener?.onVoiceRecordStop()
+                }
                 pressedKey = null
                 swipeArmed = false
                 invalidate()
@@ -442,10 +472,10 @@ class PinyinKeyboardView @JvmOverloads constructor(
             }
             Action.ENTER -> listener?.onEnter()
             Action.SPACE -> {
-                // 点中麦克风图标：切回语音；否则空格
-                if (micHotRect.contains(x, y)) listener?.onVoiceMode()
-                else listener?.onSpace()
+                // 普通空格点按（麦克风热区的按住录音已在 ACTION_DOWN 处理，不会走到这里）
+                listener?.onSpace()
             }
+            Action.SWITCH_VOICE -> listener?.onVoiceMode()
             Action.LANG -> listener?.onLangToggle()
             Action.COMMA -> listener?.onLetter(',')
             Action.PERIOD -> listener?.onLetter('。')
