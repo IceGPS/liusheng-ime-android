@@ -79,8 +79,21 @@ object Prefs {
     }
 
     /** 模型下载基地址（设置页可改，默认占位） */
-    fun getModelUrl(ctx: Context): String =
-        prefs(ctx).getString(KEY_MODEL_URL, DEFAULT_MODEL_URL) ?: DEFAULT_MODEL_URL
+    fun getModelUrl(ctx: Context): String {
+        val stored = prefs(ctx).getString(KEY_MODEL_URL, DEFAULT_MODEL_URL) ?: DEFAULT_MODEL_URL
+        // 迁移：老版本默认地址是 Qwen3 的 GitHub Release
+        // （https://github.com/.../releases/download/model-qwen3-asr-0.6b-int8），
+        // 2026-10-12 起默认地址改为 HuggingFace 的 SenseVoice。
+        // 老用户升级 App 后 SharedPreferences 里还是旧地址，
+        // 下载 model.int8.onnx 会报 HTTP 404（旧地址没有这个文件）。
+        // 检测到旧地址特征时自动替换为新默认值并写回，只迁移一次。
+        return if (stored.contains("model-qwen3-asr-0.6b-int8")) {
+            prefs(ctx).edit().putString(KEY_MODEL_URL, DEFAULT_MODEL_URL).apply()
+            DEFAULT_MODEL_URL
+        } else {
+            stored
+        }
+    }
 
     fun setModelUrl(ctx: Context, v: String) {
         prefs(ctx).edit().putString(KEY_MODEL_URL, v.trim().trimEnd('/')).apply()
