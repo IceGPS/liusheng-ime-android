@@ -146,11 +146,11 @@ class CandidateBarView @JvmOverloads constructor(
         list.forEachIndexed { index, word ->
             val tv = TextView(context).apply {
                 text = word
-                textSize = 19f
+                textSize = 22f
                 setTextColor(textColor)
                 gravity = Gravity.CENTER
                 minWidth = dp(48)
-                setPadding(dp(14), dp(10), dp(14), dp(10))
+                setPadding(dp(14), dp(12), dp(14), dp(12))
                 isClickable = true
                 isFocusable = false
                 setOnClickListener {
@@ -267,7 +267,7 @@ class CandidateBarView @JvmOverloads constructor(
             }
             val tv = TextView(context).apply {
                 text = word
-                textSize = 19f
+                textSize = 22f
                 setTextColor(textColor)
                 gravity = Gravity.CENTER
                 setPadding(dp(8), dp(12), dp(8), dp(12))
