@@ -28,10 +28,12 @@ import kotlin.math.abs
 /**
  * 极简语音输入法。
  *
- * 界面只有三个键：
- *  - 🎤 按住说话，松开转写上屏（走系统 commitText，光标天然正确）
+ * 界面：
+ *  - 🎤 语音键（兼空格键）：中央 mic 热区按住说话松开转写上屏（走系统 commitText，
+ *    光标天然正确），热区外点按输入空格
  *  - ⌫ 点按删一个字符，长按连续删除
  *  - 🌐 切回上一个输入法
+ *  - ⇧ 展开/收起符号区和数字区（均可横滑）
  *
  * 转写复用现有后端（局域网 / 端侧 MNN），与悬浮球同一套逻辑。
  */
@@ -97,11 +99,11 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 语音键：按住录音，松开转写
+        // 语音键（兼空格键）：中央 mic 热区做语音输入，其他区域点按输入空格
         val voiceBtn = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
-            text = "🎤 按住说话"
-            textSize = 16f
+            text = "🎤"
+            textSize = 20f
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 2f).apply {
                 marginEnd = dp(2)
@@ -110,30 +112,76 @@ class VoiceImeService : InputMethodService() {
         this.voiceBtn = voiceBtn
         // 保存原始背景色，用于录音结束恢复
         voiceBtnOrigBgColor = btnColor
+        // 语音键触摸状态机：DOWN 瞬间判定是否落在中央 mic 热区（56dp）
+        var voiceRecording = false   // 当前这次触摸是否在按住录音（非 VAD 模式）
+        var voiceTapValid = false    // 当前这次触摸是否有效点按（输入空格）
+        var voiceDownX = 0f
         voiceBtn.setOnTouchListener { v, event ->
             val vadEnabled = Prefs.isVadEnabled(this)
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    if (vadEnabled) {
-                        // VAD 模式：点按切换
-                        if (isVadRecording) {
-                            stopVadRecording()
+                    val halfHot = dp(28).toFloat() // 56dp 热区的一半
+                    if (abs(event.x - v.width / 2f) <= halfHot) {
+                        // 中央 mic 热区：语音输入
+                        if (vadEnabled) {
+                            // VAD 模式：点按切换
+                            if (isVadRecording) {
+                                stopVadRecording()
+                            } else {
+                                startVadRecording()
+                            }
                         } else {
-                            startVadRecording()
+                            // 非 VAD 模式：按住录音
+                            if (startRecording()) {
+                                voiceRecording = true
+                            }
                         }
+                        voiceTapValid = false
                     } else {
-                        startRecording()
+                        // 热区外：可能是输入空格的点按（不触发录音）
+                        voiceRecording = false
+                        voiceTapValid = true
+                        voiceDownX = event.x
+                        v.alpha = 0.5f
                     }
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    v.alpha = 1f
-                    if (!vadEnabled) {
-                        stopAndTranscribe()
+                MotionEvent.ACTION_MOVE -> {
+                    // 录音中手指滑出热区也继续录；
+                    // 点按则滑出 10dp 即取消，避免误触
+                    if (!voiceRecording && voiceTapValid &&
+                        abs(event.x - voiceDownX) > dp(10)) {
+                        voiceTapValid = false
+                        v.alpha = 1f
                     }
-                    // VAD 模式下 UP 不做任何事（靠点按切换或自动停止）
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (voiceRecording) {
+                        // 非 VAD 按住录音：松开停止转写（stopAndTranscribe 内部恢复背景）
+                        voiceRecording = false
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                        stopAndTranscribe()
+                    } else {
+                        v.alpha = 1f
+                        if (voiceTapValid) {
+                            // 热区外有效点按：输入空格
+                            currentInputConnection?.commitText(" ", 1)
+                        }
+                        voiceTapValid = false
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    // 手势被系统中断：停止录音或取消点按
+                    if (voiceRecording) {
+                        voiceRecording = false
+                        stopAndTranscribe()
+                    } else {
+                        v.alpha = 1f
+                        voiceTapValid = false
+                    }
                     true
                 }
                 else -> false
@@ -399,91 +447,9 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 空格键行：放在数字区下方、主行上方，全宽空格键
-        // 中央 🎤 热区（56dp）：按住录音，松开转写上屏（与拼音键盘空格键一致）
-        // 其他区域：点按输入空格
-        val spaceRow = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, dp(4))
-        }
-        val spaceBtn = Button(ctx).apply {
-            styleBtn(this, btnColor, textColor)
-            text = "🎤"
-            textSize = 20f
-            isHapticFeedbackEnabled = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f)
-        }
-        // 空格键触摸状态机：DOWN 瞬间判定是否落在 mic 热区
-        var spaceRecording = false   // 当前这次触摸是否在录音
-        var spaceTapValid = false    // 当前这次触摸是否有效点按（输入空格）
-        var spaceDownX = 0f
-        spaceBtn.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    val halfHot = dp(28).toFloat() // 56dp 热区的一半
-                    if (abs(event.x - v.width / 2f) <= halfHot) {
-                        // 按住麦克风：开始录音，红色背景反馈
-                        if (startRecording()) {
-                            spaceRecording = true
-                            v.setBackgroundColor(0xFFE53935.toInt())
-                        }
-                        spaceTapValid = false
-                    } else {
-                        // 其他区域：可能是输入空格的点按
-                        spaceRecording = false
-                        spaceTapValid = true
-                        spaceDownX = event.x
-                        v.alpha = 0.5f
-                    }
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    // 录音中手指滑出热区也继续录（与拼音键盘一致）；
-                    // 点按则滑出 10dp 即取消，避免误触
-                    if (!spaceRecording && spaceTapValid &&
-                        abs(event.x - spaceDownX) > dp(10)) {
-                        spaceTapValid = false
-                        v.alpha = 1f
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (spaceRecording) {
-                        spaceRecording = false
-                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                        v.setBackgroundColor(btnColor)
-                        stopAndTranscribe()
-                    } else {
-                        v.alpha = 1f
-                        if (spaceTapValid) {
-                            currentInputConnection?.commitText(" ", 1)
-                        }
-                        spaceTapValid = false
-                    }
-                    true
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    // 手势被系统中断：停止录音或取消点按
-                    if (spaceRecording) {
-                        spaceRecording = false
-                        v.setBackgroundColor(btnColor)
-                        stopAndTranscribe()
-                    } else {
-                        v.alpha = 1f
-                        spaceTapValid = false
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-        spaceRow.addView(spaceBtn)
-
-        // 语音模式各行装进 voiceBox：符号区、数字区、空格键、主行
+        // 语音模式各行装进 voiceBox：符号区、数字区、主行
         voiceBox.addView(symbolScroll)
         voiceBox.addView(digitScroll)
-        voiceBox.addView(spaceRow)
         voiceBox.addView(row)
 
         // 拼音键盘（默认隐藏）
@@ -579,7 +545,8 @@ class VoiceImeService : InputMethodService() {
         isVadRecording = true
         recordStartMs = System.currentTimeMillis()
         vadStopRequested = false
-        uiHandler.post { voiceBtn?.text = "🎤 VAD 录音中…点按停止" }
+        // 红底提示 VAD 录音中（按钮文字保持 🎤）
+        uiHandler.post { voiceBtn?.setBackgroundColor(0xFFE53935.toInt()) }
 
         // VAD 监控线程：检测静音自动停止
         val silenceMs = Prefs.getVadSilenceMs(this)
@@ -617,7 +584,7 @@ class VoiceImeService : InputMethodService() {
         vadStopRequested = true
         vadMonitorThread?.interrupt()
         vadMonitorThread = null
-        uiHandler.post { voiceBtn?.text = "🎤 按住说话" }
+        // stopAndTranscribe 内部恢复按钮背景和文字
         stopAndTranscribe()
     }
 
@@ -629,8 +596,7 @@ class VoiceImeService : InputMethodService() {
         }
         recordStartMs = System.currentTimeMillis()
         uiHandler.post {
-            voiceBtn?.text = "🎤 录音中…"
-            // 红色背景提示录音中（与拼音键盘空格录音的红色圆底呼应）
+            // 红色背景提示录音中（按钮文字保持 🎤，与拼音键盘空格录音的红色圆底呼应）
             voiceBtn?.setBackgroundColor(0xFFE53935.toInt())
         }
         return true
@@ -638,8 +604,8 @@ class VoiceImeService : InputMethodService() {
 
     private fun stopAndTranscribe() {
         uiHandler.post {
-            voiceBtn?.text = "🎤 按住说话"
-            // 恢复原始背景色
+            // 恢复按钮文字和原始背景色
+            voiceBtn?.text = "🎤"
             voiceBtn?.setBackgroundColor(voiceBtnOrigBgColor)
         }
         val pcm = recorder.stopAndGetPcm()
