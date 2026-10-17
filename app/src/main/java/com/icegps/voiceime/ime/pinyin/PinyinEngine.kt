@@ -23,6 +23,12 @@ interface PinyinEngine {
     fun getCandidates(): List<String>
 
     /**
+     * 全部候选词（不截断，用于浮层候选面板）。
+     * 默认实现返回 [getCandidates]；真实引擎应返回全量列表。
+     */
+    fun getAllCandidates(): List<String> = getCandidates()
+
+    /**
      * 选中第 index 个候选词。
      * @return 上屏文本；无候选时返回 null。选中后引擎内部清空拼音串。
      */

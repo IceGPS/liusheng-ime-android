@@ -14,6 +14,14 @@ class EngineAdapter(
     /** 最近一次的候选列表（用于 index → Candidate 映射） */
     private var lastCandidates: List<KotlinPinyinEngine.Candidate> = emptyList()
 
+    /** 全量候选列表（浮层面板用，不截断） */
+    private var allCandidates: List<KotlinPinyinEngine.Candidate> = emptyList()
+
+    companion object {
+        /** 浮层面板的全量候选上限 */
+        private const val MAX_ALL_CANDIDATES = 200
+    }
+
     override fun processKey(ch: Char) {
         engine.processKey(ch)
         refreshCandidates()
@@ -27,6 +35,7 @@ class EngineAdapter(
     override fun clear() {
         engine.clear()
         lastCandidates = emptyList()
+        allCandidates = emptyList()
     }
 
     override fun getComposingText(): String = engine.getComposingText()
@@ -35,8 +44,13 @@ class EngineAdapter(
         return lastCandidates.map { it.word }
     }
 
+    override fun getAllCandidates(): List<String> {
+        return allCandidates.map { it.word }
+    }
+
     override fun selectCandidate(index: Int): String? {
-        val c = lastCandidates.getOrNull(index) ?: return null
+        // 用全量列表做下标映射，兼容浮层面板的绝对下标（前9个顺序与 lastCandidates 一致）
+        val c = allCandidates.getOrNull(index) ?: return null
         val word = engine.selectCandidate(c)
         refreshCandidates()
         return word
@@ -49,10 +63,17 @@ class EngineAdapter(
         }
         engine.clear()
         lastCandidates = emptyList()
+        allCandidates = emptyList()
     }
 
     private fun refreshCandidates() {
-        lastCandidates = if (engine.isEmpty()) emptyList()
-        else engine.getCandidates()
+        if (engine.isEmpty()) {
+            lastCandidates = emptyList()
+            allCandidates = emptyList()
+        } else {
+            // 候选栏用前9个；浮层用全量（仅多传一个 maxCount 参数，生成逻辑不动）
+            lastCandidates = engine.getCandidates()
+            allCandidates = engine.getCandidates(MAX_ALL_CANDIDATES)
+        }
     }
 }

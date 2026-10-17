@@ -36,6 +36,15 @@ class PinyinInputController(
     var isChinese = true
         private set
 
+    /**
+     * 点候选栏右端 ">" 时触发；为 null 时使用默认的浮层面板实现。
+     * 设为非 null 可完全接管展开行为（默认实现不再执行）。
+     */
+    var onExpandCandidates: (() -> Unit)? = null
+
+    /** 全部候选词（不截断，浮层面板用） */
+    fun getAllCandidates(): List<String> = engine.getAllCandidates()
+
     /** 绑定键盘与候选栏，设置事件回调 */
     fun attach(keyboard: PinyinKeyboardView, bar: CandidateBarView) {
         this.keyboard = keyboard
@@ -56,6 +65,7 @@ class PinyinInputController(
         }
         bar.onToggleVoice = { switchToVoice() }
         bar.onCandidateClick = { selectCandidate(it) }
+        bar.onExpandCandidates = { onExpandCandidates?.invoke() ?: expandCandidatePanel() }
         refresh()
     }
 
@@ -83,12 +93,12 @@ class PinyinInputController(
 
     /**
      * 刷新三处显示：候选栏组合区、候选栏候选词、InputConnection 的 composing。
-     * 组合文本为空时调 finishComposing() 清掉下划线。
+     * 候选栏显示全部候选词（横向滑动浏览）；组合文本为空时清掉下划线。
      */
     private fun refresh() {
         val composing = engine.getComposingText()
         bar?.setComposing(composing)
-        bar?.setCandidates(engine.getCandidates())
+        bar?.setCandidates(engine.getAllCandidates())
         val conn = ic() ?: return
         if (composing.isNotEmpty()) {
             conn.setComposingText(composing, 1)
@@ -159,6 +169,20 @@ class PinyinInputController(
         val text = engine.selectCandidate(index) ?: return
         ic()?.commitText(text, 1)
         refresh()
+    }
+
+    /**
+     * 默认的浮层展开实现：弹出候选面板显示全部候选词。
+     * 面板中的点击按绝对下标选中（selectCandidate 已兼容全量下标）。
+     * 选中上屏后 refresh() 会重建候选栏并自动关闭浮层。
+     */
+    private fun expandCandidatePanel() {
+        val bar = this.bar ?: return
+        if (engine.getComposingText().isEmpty()) return
+        bar.showCandidatePanel(
+            candidates = engine.getAllCandidates(),
+            composing = engine.getComposingText(),
+        ) { index -> selectCandidate(index) }
     }
 
     private fun toggleLang() {
