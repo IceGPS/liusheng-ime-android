@@ -11,6 +11,10 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Toast
+import com.icegps.voiceime.ime.pinyin.CandidateBarView
+import com.icegps.voiceime.ime.pinyin.PinyinInputController
+import com.icegps.voiceime.ime.pinyin.EngineAdapter
+import com.icegps.voiceime.ime.pinyin.PinyinKeyboardView
 import com.icegps.voiceime.service.Recorder
 import com.icegps.voiceime.service.TranscriptLogger
 import com.icegps.voiceime.service.asr.AsrBackend
@@ -56,12 +60,25 @@ class VoiceImeService : InputMethodService() {
         val btnColor = if (isDark) 0xFF2C2C2E.toInt() else 0xFFFFFFFF.toInt()
         val textColor = if (isDark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
 
-        // 外层垂直布局：符号行、数字行（可折叠，默认关闭）、主输入行
+        // 外层垂直布局：候选栏（拼音模式）+ 语音模式三行 / 拼音键盘
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(4))
             setBackgroundColor(bgColor)
         }
+
+        // 候选栏：拼音模式下显示（拼音组合区 + 候选词横滚）
+        val candidateBar = CandidateBarView(ctx).apply {
+            visibility = View.GONE
+        }
+        this.candidateBar = candidateBar
+
+        // 语音模式容器：装原来的符号行、数字行、主输入行
+        val voiceBox = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        this.voiceBox = voiceBox
+
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -237,9 +254,41 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
+        // 拼音键盘切换键：切到 QWERTY 拼音键盘
+        val pinyinBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
+            text = "⌨️"
+            textSize = 22f
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                marginEnd = dp(2)
+            }
+        }
+        pinyinBtn.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.alpha = 0.5f
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.alpha = 1f
+                    v.performClick()
+                    showPinyinKeyboard()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.alpha = 1f
+                    true
+                }
+                else -> false
+            }
+        }
+
         row.addView(numpadToggleBtn)
         row.addView(settingsBtn)
         row.addView(switchBtn)
+        row.addView(pinyinBtn)
         row.addView(voiceBtn)
         row.addView(backBtn)
         row.addView(enterBtn)
@@ -324,11 +373,73 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 顺序：符号行、数字行、主输入行
-        root.addView(symbolRow)
-        root.addView(digitRow)
-        root.addView(row)
+        // 语音模式三行装进 voiceBox
+        voiceBox.addView(symbolRow)
+        voiceBox.addView(digitRow)
+        voiceBox.addView(row)
+
+        // 拼音键盘（默认隐藏）
+        val pinyinKeyboard = PinyinKeyboardView(ctx).apply {
+            visibility = View.GONE
+        }
+        this.pinyinKeyboard = pinyinKeyboard
+
+        // 拼音输入控制器：键盘 / 候选栏事件 → InputConnection
+        pinyinController = PinyinInputController(
+            connectionProvider = { currentInputConnection },
+            onSwitchToVoice = { showVoiceKeyboard() },
+            onToast = { msg -> toast(msg) },
+        ).apply {
+            attach(pinyinKeyboard, candidateBar)
+            // 接入真实引擎（词典 + 小鹤双拼，替代桩实现）
+            setEngine(EngineAdapter(ctx))
+        }
+
+        // 顺序：候选栏、语音模式、拼音键盘
+        root.addView(candidateBar)
+        root.addView(voiceBox)
+        root.addView(pinyinKeyboard)
+
+        // 恢复上次的键盘模式
+        if (Prefs.getKbMode(ctx) == Prefs.KB_PINYIN) {
+            showPinyinKeyboard()
+        } else {
+            showVoiceKeyboard()
+        }
+
         return root
+    }
+
+    // ---------- 拼音键盘（V32）：模式切换 ----------
+
+    private var candidateBar: CandidateBarView? = null
+    private var voiceBox: LinearLayout? = null
+    private var pinyinKeyboard: PinyinKeyboardView? = null
+    private var pinyinController: PinyinInputController? = null
+
+    /** 切换到拼音键盘（候选栏 + QWERTY），状态持久化 */
+    private fun showPinyinKeyboard() {
+        voiceBox?.visibility = View.GONE
+        candidateBar?.visibility = View.VISIBLE
+        pinyinKeyboard?.visibility = View.VISIBLE
+        Prefs.setKbMode(this, Prefs.KB_PINYIN)
+        pinyinController?.reset()
+    }
+
+    /** 切回语音键行，状态持久化 */
+    private fun showVoiceKeyboard() {
+        currentInputConnection?.finishComposing()
+        pinyinController?.reset()
+        pinyinKeyboard?.visibility = View.GONE
+        candidateBar?.visibility = View.GONE
+        voiceBox?.visibility = View.VISIBLE
+        Prefs.setKbMode(this, Prefs.KB_VOICE)
+    }
+
+    override fun onFinishInput() {
+        // 输入结束时清掉拼音组合状态，避免残留到下一个输入框
+        pinyinController?.reset()
+        super.onFinishInput()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

@@ -122,4 +122,35 @@ object Prefs {
     fun setNumPadExpanded(ctx: Context, v: Boolean) {
         prefs(ctx).edit().putBoolean("numpad_expanded", v).apply()
     }
+
+    // ---------- 拼音键盘（V32） ----------
+
+    private const val KEY_KB_MODE = "kb_mode"
+
+    /** 键盘模式：语音键行 */
+    const val KB_VOICE = "voice"
+
+    /** 键盘模式：拼音键盘 */
+    const val KB_PINYIN = "pinyin"
+
+    /** 当前键盘模式（语音键行 / 拼音键盘），默认语音键行 */
+    fun getKbMode(ctx: Context): String =
+        prefs(ctx).getString(KEY_KB_MODE, KB_VOICE) ?: KB_VOICE
+
+    fun setKbMode(ctx: Context, v: String) {
+        prefs(ctx).edit().putString(KEY_KB_MODE, v).apply()
+    }
+
+    private const val KEY_PINYIN_SCHEME = "pinyin_scheme"
+
+    /**
+     * 拼音方案：quanpin（全拼）/ xiaohe（小鹤双拼），默认全拼。
+     * 第一阶段桩实现仅支持全拼；第二阶段 RIME 接入后生效。
+     */
+    fun getPinyinScheme(ctx: Context): String =
+        prefs(ctx).getString(KEY_PINYIN_SCHEME, "quanpin") ?: "quanpin"
+
+    fun setPinyinScheme(ctx: Context, v: String) {
+        prefs(ctx).edit().putString(KEY_PINYIN_SCHEME, v).apply()
+    }
 }
