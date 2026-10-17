@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
  *  4. 全部通过后生成运行时 config.json，标记模型就绪
  *
  * 约束：
- *  - 仅 WiFi 下载（调用方在开始前用 [isWifiConnected] 检查并提示用户）
+ *  - WiFi 直接下载；手机流量需用户确认后才下载（调用方用 [networkType] 判断并弹窗）
  *  - 模型绝不打包进 APK，只走这个流程进 App 私有目录
  *
  * TODO(hosting)：baseUrl 目前是占位（见 Prefs），实际 hosting 确定后
@@ -41,16 +41,30 @@ object ModelDownloader {
     data class ManifestEntry(val name: String, val sha256: String)
 
     /**
+     * 当前网络类型。WiFi 直接下载；手机流量需用户确认；无网络不能下载。
+     */
+    enum class NetworkType { NONE, WIFI, MOBILE }
+
+    /**
+     * 返回当前网络类型：无网络→NONE，WiFi→WIFI，蜂窝数据→MOBILE。
+     */
+    fun networkType(ctx: Context): NetworkType {
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val net = cm.activeNetwork ?: return NetworkType.NONE
+        val caps = cm.getNetworkCapabilities(net) ?: return NetworkType.NONE
+        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return NetworkType.NONE
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> NetworkType.WIFI
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkType.MOBILE
+            else -> NetworkType.WIFI // 以太网等其他类型按 WiFi 处理（不限流）
+        }
+    }
+
+    /**
      * 仅 WiFi 才返回 true（移动数据/无网络返回 false）。
      * 下载前调用：非 WiFi 时提示用户"请连接 WiFi 后下载（约 826MB）"。
      */
-    fun isWifiConnected(ctx: Context): Boolean {
-        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val net = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(net) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
+    fun isWifiConnected(ctx: Context): Boolean = networkType(ctx) == NetworkType.WIFI
 
     /**
      * 下载全部模型文件并校验。必须在后台线程调用。

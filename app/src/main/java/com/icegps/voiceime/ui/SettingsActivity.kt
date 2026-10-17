@@ -14,6 +14,7 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import android.app.AlertDialog
 import android.widget.Toast
 import com.icegps.voiceime.service.ModelDownloader
 import com.icegps.voiceime.service.asr.SherpaAsrBackend
@@ -25,7 +26,7 @@ import com.icegps.voiceime.util.Prefs
  * V2 新增：
  *  - 转写引擎：端侧优先（默认）/ 仅局域网
  *  - 端侧模型状态：未下载 / 下载中 x% / 已就绪（大小）
- *  - 手动下载 / 重新下载按钮（仅 WiFi，~230MB，SHA256 校验）
+ *  - 手动下载 / 重新下载按钮（~230MB，SHA256 校验；WiFi 直接下载，手机流量需用户确认）
  */
 class SettingsActivity : Activity() {
 
@@ -281,10 +282,28 @@ class SettingsActivity : Activity() {
             toast("正在下载，请稍候")
             return
         }
-        if (!ModelDownloader.isWifiConnected(this)) {
-            toast("请连接 WiFi 后下载（模型约 230MB）")
-            return
+        when (ModelDownloader.networkType(this)) {
+            ModelDownloader.NetworkType.NONE -> {
+                toast("无网络连接，无法下载")
+                return
+            }
+            ModelDownloader.NetworkType.MOBILE -> {
+                // 手机流量：弹窗请用户确认，不禁止下载
+                AlertDialog.Builder(this)
+                    .setTitle("使用手机流量下载？")
+                    .setMessage("当前正在使用手机流量\n模型约 230MB，是否继续下载？")
+                    .setPositiveButton("继续下载") { _, _ -> beginDownload() }
+                    .setNegativeButton("取消", null)
+                    .show()
+                return
+            }
+            ModelDownloader.NetworkType.WIFI -> { /* 直接下载 */ }
         }
+        beginDownload()
+    }
+
+    /** 实际开始下载的流程（WiFi 直接进，手机流量经用户确认后进） */
+    private fun beginDownload() {
         val url = modelUrlEdit.text.toString().trim()
         if (url.isEmpty()) {
             toast("请填写模型下载地址")
