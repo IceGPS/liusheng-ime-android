@@ -85,6 +85,33 @@ class SettingsActivity : Activity() {
         }
         root.addView(vadSwitch)
 
+        // ---------- 拼音方案 ----------
+        root.addView(sectionTitle("拼音方案"))
+        val schemeGroup = RadioGroup(this).apply {
+            orientation = RadioGroup.VERTICAL
+        }
+        val radioQuanpin = RadioButton(this).apply {
+            text = "全拼"
+            id = View.generateViewId()
+        }
+        val radioXiaohe = RadioButton(this).apply {
+            text = "小鹤双拼"
+            id = View.generateViewId()
+        }
+        schemeGroup.addView(radioQuanpin)
+        schemeGroup.addView(radioXiaohe)
+        if (Prefs.getPinyinScheme(this) == "xiaohe") {
+            radioXiaohe.isChecked = true
+        } else {
+            radioQuanpin.isChecked = true
+        }
+        schemeGroup.setOnCheckedChangeListener { _, checkedId ->
+            val scheme = if (checkedId == radioXiaohe.id) "xiaohe" else "quanpin"
+            Prefs.setPinyinScheme(this, scheme)
+            toast(if (scheme == "xiaohe") "已切换为小鹤双拼" else "已切换为全拼")
+        }
+        root.addView(schemeGroup)
+
         // ---------- 端侧模型 ----------
         root.addView(sectionTitle("端侧模型（SenseVoice-Small INT8，约 230MB）"))
         modelStatus = label("")

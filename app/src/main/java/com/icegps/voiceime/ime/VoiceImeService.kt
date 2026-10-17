@@ -423,7 +423,7 @@ class VoiceImeService : InputMethodService() {
         candidateBar?.visibility = View.VISIBLE
         pinyinKeyboard?.visibility = View.VISIBLE
         Prefs.setKbMode(this, Prefs.KB_PINYIN)
-        pinyinController?.reset()
+        pinyinController?.syncScheme(this)
     }
 
     /** 切回语音键行，状态持久化 */

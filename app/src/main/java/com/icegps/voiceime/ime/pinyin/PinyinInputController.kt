@@ -56,7 +56,20 @@ class PinyinInputController(
         }
         bar.onToggleVoice = { switchToVoice() }
         bar.onCandidateClick = { selectCandidate(it) }
-        engine.setMode(PinyinMode.QUANPIN)
+        refresh()
+    }
+
+    /**
+     * 从 Prefs 同步拼音方案（全拼/小鹤）到引擎。
+     * 在键盘显示时调用，确保设置页的修改即时生效。
+     */
+    fun syncScheme(ctx: android.content.Context) {
+        val mode = when (com.icegps.voiceime.util.Prefs.getPinyinScheme(ctx)) {
+            "xiaohe" -> PinyinMode.XIAOHE_SHUANGPIN
+            else -> PinyinMode.QUANPIN
+        }
+        engine.setMode(mode)
+        engine.clear()
         refresh()
     }
 
