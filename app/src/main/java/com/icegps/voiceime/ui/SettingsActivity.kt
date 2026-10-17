@@ -129,7 +129,7 @@ class SettingsActivity : Activity() {
             setOnClickListener { startDownload() }
         }
         root.addView(downloadBtn)
-        root.addView(label("模型下载地址（默认官方 release 占位，实际 hosting 确定后可改）："))
+        root.addView(label("模型下载地址："))
         modelUrlEdit = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT
             setText(Prefs.getModelUrl(this@SettingsActivity))
