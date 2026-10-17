@@ -7,7 +7,7 @@
 #   1. 从源码编译 MNN（arm64-v8a，LLM + audio，CPU only）得到 libMNN.so
 #   2. 用 NDK 编译 app/src/main/cpp/mnn_asr_bridge.cpp 得到 libvoiceime_mnn.so
 #   3. 按 tools/build-apk-manual.sh 的逻辑（kotlinc+aapt2+d8+apksigner）打 APK，
-#      并把两个 .so 以不压缩方式塞进 APK 的 lib/arm64-v8a/
+#      并把 .so 以压缩方式塞进 APK 的 lib/arm64-v8a/（减小体积约 40%）
 #   4. 上传 APK + 两个 .so 为 workflow artifacts
 #
 # 模型文件（~1GB）不进 CI；APK 保持不含模型，仍走 App 内 WiFi 下载流程。
@@ -188,10 +188,10 @@ jobs:
             "$DEPS_DIR/kotlin-stdlib-2.0.20.jar" "$DEPS_DIR/okhttp-4.12.0.jar" "$DEPS_DIR/okio-jvm-3.6.0.jar" \
             "$SHERPA_JAR"
 
-          echo "== 打包：classes.dex + native libs（.so 不压缩存放）"
+          echo "== 打包：classes.dex + native libs（.so 压缩存放，减小体积）"
           cp "$BUILD_DIR/dex/classes.dex" "$BUILD_DIR/"
           (cd "$BUILD_DIR" && "$BT/aapt" add base.apk classes.dex > /dev/null)
-          (cd "$STAGE" && zip -0 -q -r "$BUILD_DIR/base.apk" lib)
+          (cd "$STAGE" && zip -9 -q -r "$BUILD_DIR/base.apk" lib)
 
           echo "== 对齐/签名/校验"
           "$BT/zipalign" -f 4 "$BUILD_DIR/base.apk" "$BUILD_DIR/aligned.apk"
