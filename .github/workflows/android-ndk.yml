@@ -168,6 +168,7 @@ jobs:
             --manifest "$BUILD_DIR/AndroidManifest.xml" \
             --min-sdk-version 26 --target-sdk-version 34 \
             --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
+            -A "$PROJ_DIR/app/src/main/assets" \
             -I "$PLATFORM" "$BUILD_DIR"/compiled-res/*.flat
 
           echo "== kotlinc（全部 Kotlin 源码 + R.java）"
