@@ -16,7 +16,7 @@
 
 ---
 
-这是 voice-ime 项目（https://github.com/IceGPS/voice-ime）的 Android 端。
+这是 [voice-ime](https://github.com/IceGPS/voice-ime) 项目的 Android 端。
 
 ## 三、V41 使用方法
 
