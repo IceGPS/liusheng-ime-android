@@ -71,9 +71,14 @@ class VoiceImeService : InputMethodService() {
             setBackgroundColor(bgColor)
         }
 
-        // 候选栏：拼音模式下显示（拼音组合区 + 候选词横滚）
+        // 候选栏：拼音模式下显示（拼音小耳朵 + 候选词横滚）。
+        // 高度固定 60dp：输入法窗口高度恒定，目标 App 编辑区不随输入状态伸缩闪烁。
         val candidateBar = CandidateBarView(ctx).apply {
             visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(60),
+            )
         }
         this.candidateBar = candidateBar
 
