@@ -132,7 +132,7 @@ class VoiceImeService : InputMethodService() {
                 voiceTapValid = false
                 if (startRecording()) {
                     voiceRecording = true
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    voiceBtn?.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                 }
             }
         }
