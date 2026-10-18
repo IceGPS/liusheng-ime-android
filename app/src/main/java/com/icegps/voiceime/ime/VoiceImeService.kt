@@ -127,11 +127,12 @@ class VoiceImeService : InputMethodService() {
         // 长按判定：100ms（用户要求，500ms 体感太长）
         val longPressTimeout = 100L
         val longPressRunnable = Runnable {
-            // 长按触发：手指未松开且未滑出时转入语音录音
+            // 长按触发：手指未松开且未滑出时转入语音录音，轻振提示已进入录音
             if (voiceTapValid && !voiceRecording) {
                 voiceTapValid = false
                 if (startRecording()) {
                     voiceRecording = true
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                 }
             }
         }

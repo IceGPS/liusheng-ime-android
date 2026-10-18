@@ -182,10 +182,11 @@ class PinyinKeyboardView @JvmOverloads constructor(
     /** 空格键短按/长按判定：短按=空格，长按 100ms=语音输入（不限按压位置） */
     private var spaceTapValid = false
     private val spaceLongPressRunnable = Runnable {
-        // 长按触发：手指未松开且未滑出时转入语音录音
+        // 长按触发：手指未松开且未滑出时转入语音录音，轻振提示已进入录音
         if (spaceTapValid && !voiceRecording) {
             spaceTapValid = false
             voiceRecording = true
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             listener?.onVoiceRecordStart()
             invalidate()
         }
