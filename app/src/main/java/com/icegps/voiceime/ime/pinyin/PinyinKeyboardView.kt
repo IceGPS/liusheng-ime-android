@@ -15,6 +15,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.PopupWindow
 import android.widget.TextView
+import kotlin.math.abs
 
 /**
  * 手绘 QWERTY 拼音键盘（布局仿搜狗输入法）。
@@ -28,7 +29,7 @@ import android.widget.TextView
  * 交互：
  * - 点按字母键：输入字母；按住字母键上滑约半个键高：输入上标的数字/符号并弹预览框
  * - 退格键：点按删一个，长按连续删除
- * - 空格中央麦克风图标：点按切回语音键行
+ * - 空格键：短按=空格，长按 100ms=语音输入（不限按压位置）
  * - 跟随系统深浅色
  */
 class PinyinKeyboardView @JvmOverloads constructor(
@@ -60,13 +61,13 @@ class PinyinKeyboardView @JvmOverloads constructor(
         /** “123”键（第一阶段未实现） */
         fun onDigitPage()
 
-        /** 空格键 */
+        /** 空格键：短按=空格，长按=语音输入 */
         fun onSpace()
 
         /** ⌨️ 键：切回极简语音键盘 */
         fun onVoiceMode()
 
-        /** 空格中央麦克风图标：按住开始录音 */
+        /** 空格键：短按走 onSpace，长按 100ms 走 onVoiceRecordStart */
         fun onVoiceRecordStart()
 
         /** 录音结束（松开手指 / 手势取消） */
@@ -130,7 +131,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
         add(Key("123", null, Action.DIGIT_PAGE, 1.3f, true))
         add(Key(",", null, Action.COMMA, 0.9f, false))
         add(Key("⌨️", null, Action.SWITCH_VOICE, 1.3f, true)) // 切回极简语音键盘
-        add(Key("", null, Action.SPACE, 3.0f, false)) // 空格：中央麦克风图标按住录音
+        add(Key("", null, Action.SPACE, 3.0f, false)) // 空格：短按=空格，长按=语音输入
         add(Key("。", null, Action.PERIOD, 0.9f, false))
         add(Key("中/英", null, Action.LANG, 1.3f, true))
         add(Key("⏎", null, Action.ENTER, 1.5f, true))
@@ -175,24 +176,19 @@ class PinyinKeyboardView @JvmOverloads constructor(
     private var rowGap = 0f
     private val cornerR: Float get() = dp(6).toFloat()
 
-    /** 空格上麦克风图标的可点热区（绘制时更新） */
-    private val micHotRect = RectF()
-
-    /** 是否正在按住空格麦克风录音（用于图标变色 + 手势状态） */
+    /** 是否正在按住空格录音（用于整个空格键变红 + 手势状态） */
     private var voiceRecording = false
 
-    /**
-     * 动态计算麦克风热区是否包含触摸点。
-     * 不依赖 drawMicIcon 更新的缓存 micHotRect，直接从空格键矩形实时计算，
-     * 避免折叠屏展开/折叠等尺寸变化时缓存不同步导致热区失效。
-     */
-    private fun isInMicHotZone(x: Float, y: Float): Boolean {
-        val spaceKey = row3.find { it.action == Action.SPACE } ?: return false
-        val s = dp(56).toFloat()
-        val cx = spaceKey.rect.centerX()
-        val cy = spaceKey.rect.centerY()
-        return x >= cx - s / 2 && x <= cx + s / 2 &&
-               y >= cy - s / 2 && y <= cy + s / 2
+    /** 空格键短按/长按判定：短按=空格，长按 100ms=语音输入（不限按压位置） */
+    private var spaceTapValid = false
+    private val spaceLongPressRunnable = Runnable {
+        // 长按触发：手指未松开且未滑出时转入语音录音
+        if (spaceTapValid && !voiceRecording) {
+            spaceTapValid = false
+            voiceRecording = true
+            listener?.onVoiceRecordStart()
+            invalidate()
+        }
     }
 
     init {
@@ -219,7 +215,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
         // 键高按实际高度均分，保证 EXACTLY 模式下不变形
         keyH = (h - paddingTop - paddingBottom - rowGap * 3) / 4f
         layoutKeys()
-        // 折叠屏展开/折叠时尺寸变化，强制重绘以更新 micHotRect 等绘制期缓存
+        // 折叠屏展开/折叠时尺寸变化，强制重绘
         invalidate()
     }
 
@@ -322,16 +318,11 @@ class PinyinKeyboardView @JvmOverloads constructor(
         }
     }
 
-    /** 空格中央的麦克风图标（emoji），同时更新可点热区 */
+    /** 空格中央的麦克风图标（emoji，长按空格=语音输入的视觉提示） */
     private fun drawMicIcon(canvas: Canvas, r: RectF) {
         // 录音中的红色反馈已由 drawKey 把整个空格键染红，这里只画图标
         emojiPaint.textSize = sp(22f)
         canvas.drawText("🎤", r.centerX(), textBaseline(r, emojiPaint), emojiPaint)
-        val s = dp(56).toFloat()
-        micHotRect.set(
-            r.centerX() - s / 2, r.centerY() - s / 2,
-            r.centerX() + s / 2, r.centerY() + s / 2,
-        )
     }
 
     /** “中/英”：当前语言用 accent 色高亮 */
@@ -394,13 +385,11 @@ class PinyinKeyboardView @JvmOverloads constructor(
                     // 点按立即删一个，长按连续删
                     listener?.onBackspace()
                     startBackspaceRepeat()
-                } else if (k.action == Action.SPACE && isInMicHotZone(x, y)) {
-                    // 按住空格中央的麦克风图标：开始语音录音，松开结束
-                    // （手指滑出热区仍继续录，直到 UP/CANCEL）
-                    // 热区动态计算，不依赖绘制缓存，折叠屏尺寸变化也有效
-                    voiceRecording = true
-                    listener?.onVoiceRecordStart()
-                    invalidate()
+                } else if (k.action == Action.SPACE) {
+                    // 空格键：短按=空格（UP 时走 handleTap→onSpace），
+                    // 长按 100ms=语音输入（不限按压位置，手指滑出仍继续录）
+                    spaceTapValid = true
+                    handler.postDelayed(spaceLongPressRunnable, 100L)
                 }
                 return true
             }
@@ -415,22 +404,32 @@ class PinyinKeyboardView @JvmOverloads constructor(
                         invalidate()
                     }
                 }
+                // 空格键：未进入录音前滑出 10dp 则取消短按和长按，避免误触
+                if (spaceTapValid && !voiceRecording &&
+                    (abs(x - downX) > dp(10) || abs(y - downY) > dp(10))) {
+                    spaceTapValid = false
+                    handler.removeCallbacks(spaceLongPressRunnable)
+                }
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 val k = pressedKey
                 stopBackspaceRepeat()
                 dismissPreview()
+                handler.removeCallbacks(spaceLongPressRunnable)
                 if (voiceRecording) {
-                    // 按住录音结束：不走点按逻辑，直接停止转写
+                    // 长按录音结束：不走点按逻辑，直接停止转写
                     voiceRecording = false
                     performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     listener?.onVoiceRecordStop()
-                } else if (k != null) {
-                    if (swipeArmed && k.hint != null) {
-                        listener?.onSymbol(k.hint[0])
-                    } else {
-                        handleTap(k, x, y)
+                } else {
+                    spaceTapValid = false
+                    if (k != null) {
+                        if (swipeArmed && k.hint != null) {
+                            listener?.onSymbol(k.hint[0])
+                        } else {
+                            handleTap(k, x, y)
+                        }
                     }
                 }
                 pressedKey = null
@@ -441,6 +440,8 @@ class PinyinKeyboardView @JvmOverloads constructor(
             MotionEvent.ACTION_CANCEL -> {
                 stopBackspaceRepeat()
                 dismissPreview()
+                handler.removeCallbacks(spaceLongPressRunnable)
+                spaceTapValid = false
                 if (voiceRecording) {
                     // 手势被系统取消：同样停止录音
                     voiceRecording = false
@@ -488,7 +489,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
             }
             Action.ENTER -> listener?.onEnter()
             Action.SPACE -> {
-                // 普通空格点按（麦克风热区的按住录音已在 ACTION_DOWN 处理，不会走到这里）
+                // 短按空格（有拼音组合时选首选，见控制器）；长按已在 DOWN 后 100ms 转入录音，不会走到这里
                 listener?.onSpace()
             }
             Action.SWITCH_VOICE -> listener?.onVoiceMode()

@@ -180,10 +180,11 @@ class PinyinInputController(
     }
 
     private fun handleEnter() {
-        val composing = engine.getComposingText()
-        if (composing.isNotEmpty()) {
-            // 回车直接上屏原始拼音字母（原封不动），不做拼音到汉字的转换
-            ic()?.commitText(composing, 1)
+        val raw = engine.rawInput()
+        if (raw.isNotEmpty()) {
+            // 回车直接上屏用户实际键入的原始字母（原封不动）：
+            // 双拼模式下不展开成全拼（如 "vk" 不变成 "zhang"），不加 ' 分隔符
+            ic()?.commitText(raw, 1)
             engine.clear()
             refresh()
         } else {

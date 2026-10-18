@@ -19,6 +19,9 @@ interface PinyinEngine {
     /** 拼音组合文本，如 "ni'hao"（用于 setComposingText 显示） */
     fun getComposingText(): String
 
+    /** 用户实际键入的原始字母序列（双拼模式下未经全拼转换，如 "vk"） */
+    fun rawInput(): String
+
     /** 当前候选词列表 */
     fun getCandidates(): List<String>
 
