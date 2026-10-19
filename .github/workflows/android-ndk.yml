@@ -210,11 +210,44 @@ jobs:
           "$BT/aapt" dump badging "$PROJ_DIR/dist/liusheng-ime-android-v2.apk" | head -2
           unzip -l "$PROJ_DIR/dist/liusheng-ime-android-v2.apk" | grep -E "lib/arm64|classes.dex"
 
+          echo "== AAB（bundletool，供 Google Play 上传）"
+          BUNDLETOOL_JAR="$DEPS_DIR/bundletool-all-1.18.1.jar"
+          [ -f "$BUNDLETOOL_JAR" ] || curl -sSL --max-time 300 -o "$BUNDLETOOL_JAR" \
+            "https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar"
+
+          # aapt2 link --proto-format 产出 bundle 模块原型（含 resources.pb / 二进制 manifest / res / assets）
+          "$BT/aapt2" link --proto-format -o "$BUILD_DIR/module.zip" \
+            --manifest "$BUILD_DIR/AndroidManifest.xml" \
+            --min-sdk-version 26 --target-sdk-version 35 \
+            --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
+            -A "$PROJ_DIR/app/src/main/assets" \
+            -I "$PLATFORM" "$BUILD_DIR"/compiled-res/*.flat
+
+          rm -rf "$BUILD_DIR/bundle" && mkdir -p "$BUILD_DIR/bundle/dex" "$BUILD_DIR/bundle/lib/arm64-v8a"
+          (cd "$BUILD_DIR/bundle" && unzip -o -q "$BUILD_DIR/module.zip")
+          cp "$BUILD_DIR/classes.dex" "$BUILD_DIR/bundle/dex/"
+          # AAB 里的 .so 按 Play 要求不压缩存放（APK 里为省体积用压缩存放，两者分开处理）
+          cp "$STAGE/lib/arm64-v8a/"*.so "$BUILD_DIR/bundle/lib/arm64-v8a/"
+
+          (cd "$BUILD_DIR/bundle" && zip -q -r "$BUILD_DIR/base.zip" AndroidManifest.xml resources.pb res assets dex)
+          (cd "$BUILD_DIR/bundle" && zip -q -0 -r "$BUILD_DIR/base.zip" lib)
+
+          "$JAVA_HOME/bin/java" -jar "$BUNDLETOOL_JAR" build-bundle \
+            --modules="$BUILD_DIR/base.zip" --output="$BUILD_DIR/app.aab"
+          "$JAVA_HOME/bin/java" -jar "$BT/lib/apksigner.jar" sign \
+            --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android \
+            --out "$BUILD_DIR/signed.aab" "$BUILD_DIR/app.aab"
+          "$JAVA_HOME/bin/java" -jar "$BT/lib/apksigner.jar" verify "$BUILD_DIR/signed.aab"
+
+          cp "$BUILD_DIR/signed.aab" "$PROJ_DIR/dist/liusheng-ime-android-v2.aab"
+          ls -lh "$PROJ_DIR/dist/liusheng-ime-android-v2.aab"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: liusheng-ime-android-v2-ndk
           path: |
             dist/liusheng-ime-android-v2.apk
+            dist/liusheng-ime-android-v2.aab
             dist/native-libs/arm64-v8a/*.so
           if-no-files-found: error
