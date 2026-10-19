@@ -109,7 +109,8 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
         /** 模型根目录：<filesDir>/models/sense-voice-small/ */
         fun modelDir(ctx: Context): File = File(File(ctx.filesDir, "models"), MODEL_DIR_NAME)
 
-        /** 备份目录：/sdcard/Download/voice-ime-models/sense-voice-small/（卸载不删除） */
+        /** 旧备份目录（V61 之前）：/sdcard/Download/voice-ime-models/sense-voice-small/（卸载不删除）；
+         *  仅用于老用户升级时的一次性迁移读取，新备份走 MediaStore */
         fun backupDir(): File = File(
             android.os.Environment.getExternalStoragePublicDirectory(
                 android.os.Environment.DIRECTORY_DOWNLOADS
@@ -139,33 +140,172 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
 
         /**
          * 从备份恢复模型（卸载重装后免重新下载）。
+         * V61 起备份改走 MediaStore（无需任何存储权限），MANAGE_EXTERNAL_STORAGE 已移除。
          * @return 成功恢复返回 true
          */
         fun restoreFromBackup(ctx: Context): Boolean {
             if (isModelReady(ctx)) return true
-            val backup = backupDir()
-            val modelBak = File(backup, MODEL_FILE)
-            val tokensBak = File(backup, TOKENS_FILE)
-            if (!modelBak.isFile || modelBak.length() < 200L * 1024 * 1024) return false
-            if (!tokensBak.isFile || tokensBak.length() < 100L * 1024) return false
+            // 新位置优先：MediaStore（无需权限）
+            if (restoreFromMediaStore(ctx)) return true
+            // 旧位置：V61 之前的 File 备份（老用户升级场景；Android 11+ 无 MANAGE 权限时不可读则跳过）
+            if (restoreFromLegacyFile(ctx)) {
+                // 迁移到新位置，下次走 MediaStore
+                backupModel(ctx)
+                return true
+            }
+            return false
+        }
+
+        /**
+         * 备份模型（V61）。
+         * API 29+：MediaStore Download（零权限）；API 26-28：旧 File 路径。
+         * 备份用于卸载重装后免重新下载。
+         */
+        fun backupModel(ctx: Context) {
+            if (!isModelReady(ctx)) return
+            if (android.os.Build.VERSION.SDK_INT >= 29) backupToMediaStore(ctx)
+            else backupToLegacyFile(ctx)
+        }
+
+        /** MediaStore 备份相对路径（Download 下） */
+        private const val BACKUP_RELATIVE_PATH = "Download/voice-ime-models/sense-voice-small"
+
+        private fun backupToMediaStore(ctx: Context) {
+            try {
+                val resolver = ctx.contentResolver
+                val files = listOf(MODEL_FILE to "application/octet-stream", TOKENS_FILE to "text/plain")
+                for ((name, mime) in files) {
+                    val src = File(modelDir(ctx), name)
+                    if (!src.isFile) continue
+                    // 先删旧备份，避免重复条目
+                    deleteMediaStoreEntry(ctx, name)
+                    val values = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                        put(android.provider.MediaStore.Downloads.MIME_TYPE, mime)
+                        put(android.provider.MediaStore.Downloads.RELATIVE_PATH, BACKUP_RELATIVE_PATH)
+                        put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                    val uri = resolver.insert(
+                        android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
+                    ) ?: throw IllegalStateException("MediaStore insert 失败：$name")
+                    try {
+                        resolver.openOutputStream(uri)?.use { out ->
+                            src.inputStream().use { it.copyTo(out) }
+                        } ?: throw IllegalStateException("无法打开输出流：$name")
+                        resolver.update(
+                            uri,
+                            android.content.ContentValues().apply {
+                                put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
+                            },
+                            null, null,
+                        )
+                    } catch (e: Exception) {
+                        try { resolver.delete(uri, null, null) } catch (_: Exception) {}
+                        throw e
+                    }
+                }
+                Log.i(TAG, "[sherpa] 模型已备份到 MediaStore Download")
+            } catch (e: Exception) {
+                Log.w(TAG, "[sherpa] MediaStore 备份失败", e)
+            }
+        }
+
+        private fun deleteMediaStoreEntry(ctx: Context, displayName: String) {
+            try {
+                val resolver = ctx.contentResolver
+                resolver.query(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    arrayOf(android.provider.MediaStore.Downloads._ID),
+                    "${android.provider.MediaStore.Downloads.DISPLAY_NAME}=? AND " +
+                        "${android.provider.MediaStore.Downloads.RELATIVE_PATH}=?",
+                    arrayOf(displayName, "$BACKUP_RELATIVE_PATH/"),
+                    null,
+                )?.use { c ->
+                    val idCol = c.getColumnIndexOrThrow(android.provider.MediaStore.Downloads._ID)
+                    while (c.moveToNext()) {
+                        val uri = android.content.ContentUris.withAppendedId(
+                            android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            c.getLong(idCol),
+                        )
+                        try { resolver.delete(uri, null, null) } catch (_: Exception) {}
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "[sherpa] 删除旧 MediaStore 备份失败", e)
+            }
+        }
+
+        private fun findMediaStoreEntry(ctx: Context, displayName: String): android.net.Uri? {
             return try {
+                ctx.contentResolver.query(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    arrayOf(android.provider.MediaStore.Downloads._ID),
+                    "${android.provider.MediaStore.Downloads.DISPLAY_NAME}=? AND " +
+                        "${android.provider.MediaStore.Downloads.RELATIVE_PATH}=?",
+                    arrayOf(displayName, "$BACKUP_RELATIVE_PATH/"),
+                    null,
+                )?.use { c ->
+                    if (c.moveToFirst()) {
+                        val idCol = c.getColumnIndexOrThrow(android.provider.MediaStore.Downloads._ID)
+                        android.content.ContentUris.withAppendedId(
+                            android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            c.getLong(idCol),
+                        )
+                    } else null
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "[sherpa] 查询 MediaStore 备份失败", e)
+                null
+            }
+        }
+
+        private fun restoreFromMediaStore(ctx: Context): Boolean {
+            if (android.os.Build.VERSION.SDK_INT < 29) return false
+            return try {
+                val resolver = ctx.contentResolver
                 val dir = modelDir(ctx).apply { mkdirs() }
-                modelBak.copyTo(File(dir, MODEL_FILE), overwrite = true)
-                tokensBak.copyTo(File(dir, TOKENS_FILE), overwrite = true)
-                // 恢复成功后更新 Prefs 标记，界面才能显示"已就绪"
+                val files = listOf(MODEL_FILE to 200L * 1024 * 1024, TOKENS_FILE to 100L * 1024)
+                for ((name, minSize) in files) {
+                    val uri = findMediaStoreEntry(ctx, name) ?: return false
+                    val size = resolver.query(
+                        uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null,
+                    )?.use { c -> if (c.moveToFirst()) c.getLong(0) else -1 } ?: -1
+                    if (size < minSize) return false
+                    resolver.openInputStream(uri)?.use { input ->
+                        File(dir, name).outputStream().use { input.copyTo(it) }
+                    } ?: return false
+                }
                 com.icegps.voiceime.util.Prefs.setModelReady(ctx, true)
-                Log.i(TAG, "[sherpa] 模型已从备份恢复，无需重新下载")
+                Log.i(TAG, "[sherpa] 模型已从 MediaStore 备份恢复，无需重新下载")
                 true
             } catch (e: Exception) {
-                Log.w(TAG, "[sherpa] 从备份恢复失败", e)
+                Log.w(TAG, "[sherpa] 从 MediaStore 恢复失败", e)
                 false
             }
         }
 
-        /**
-         * 备份模型到 Download（下载完成后调用）。
-         */
-        fun backupModel(ctx: Context) {
+        /** 旧 File 备份恢复（V61 之前版本，尽力而为） */
+        private fun restoreFromLegacyFile(ctx: Context): Boolean {
+            return try {
+                val backup = backupDir()
+                val modelBak = File(backup, MODEL_FILE)
+                val tokensBak = File(backup, TOKENS_FILE)
+                if (!modelBak.isFile || modelBak.length() < 200L * 1024 * 1024) return false
+                if (!tokensBak.isFile || tokensBak.length() < 100L * 1024) return false
+                val dir = modelDir(ctx).apply { mkdirs() }
+                modelBak.copyTo(File(dir, MODEL_FILE), overwrite = true)
+                tokensBak.copyTo(File(dir, TOKENS_FILE), overwrite = true)
+                com.icegps.voiceime.util.Prefs.setModelReady(ctx, true)
+                Log.i(TAG, "[sherpa] 模型已从旧 File 备份恢复")
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "[sherpa] 从旧 File 备份恢复失败", e)
+                false
+            }
+        }
+
+        /** 旧 File 备份（仅 API 26-28；29+ 走 MediaStore） */
+        private fun backupToLegacyFile(ctx: Context) {
             if (!isModelReady(ctx)) return
             try {
                 val dir = modelDir(ctx)
@@ -174,7 +314,7 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
                 File(dir, TOKENS_FILE).copyTo(File(backup, TOKENS_FILE), overwrite = true)
                 Log.i(TAG, "[sherpa] 模型已备份到 ${backup.absolutePath}")
             } catch (e: Exception) {
-                Log.w(TAG, "[sherpa] 模型备份失败", e)
+                Log.w(TAG, "[sherpa] File 备份失败", e)
             }
         }
     }

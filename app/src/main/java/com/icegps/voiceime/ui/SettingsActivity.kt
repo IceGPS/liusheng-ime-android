@@ -229,41 +229,12 @@ class SettingsActivity : Activity() {
 
     // ---------- 模型状态 ----------
 
-    private fun hasAllFilesAccess(): Boolean {
-        return android.os.Build.VERSION.SDK_INT < 30 ||
-               android.os.Environment.isExternalStorageManager()
-    }
-
-    private fun requestAllFilesAccess() {
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
-            try {
-                val intent = android.content.Intent(
-                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    android.net.Uri.parse("package:$packageName")
-                )
-                startActivity(intent)
-            } catch (e: Exception) {
-                val intent = android.content.Intent(
-                    android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION
-                )
-                startActivity(intent)
-            }
-        }
-    }
-
     private fun refreshModelStatus() {
-        // Android 11+ 需要所有文件访问权限才能读写 Download 备份
-        if (!hasAllFilesAccess()) {
-            modelStatus.text = "模型状态：需要「所有文件访问权限」才能备份/恢复模型"
-            downloadBtn.text = "授权所有文件访问"
-            downloadBtn.setOnClickListener { requestAllFilesAccess() }
-            return
-        }
-        // 先尝试从备份恢复（卸载重装后自动恢复，无需重新下载）
+        // 先尝试从备份恢复（卸载重装后自动恢复，无需重新下载；V61 起走 MediaStore，无需存储权限）
         if (!SherpaAsrBackend.isModelReady(this)) {
             SherpaAsrBackend.restoreFromBackup(this)
         }
-        // 恢复按钮的原始点击事件（可能之前被设成了授权）
+        // 恢复按钮的原始点击事件
         downloadBtn.setOnClickListener { startDownload() }
         val ready = Prefs.isModelReady(this) && SherpaAsrBackend.isModelReady(this)
         val sizeMb = SherpaAsrBackend.modelSizeBytes(this) / 1024 / 1024
