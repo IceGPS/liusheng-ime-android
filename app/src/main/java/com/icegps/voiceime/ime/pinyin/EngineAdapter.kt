@@ -40,6 +40,8 @@ class EngineAdapter(
 
     override fun getComposingText(): String = engine.getComposingText()
 
+    override fun rawInput(): String = engine.rawInput()
+
     override fun getCandidates(): List<String> {
         return lastCandidates.map { it.word }
     }

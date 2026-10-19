@@ -16,12 +16,16 @@ import android.widget.ScrollView
 import android.widget.TextView
 
 /**
- * 拼音候选栏。
+ * 拼音候选栏（V47）。
  *
- * 布局（横向）：
+ * 布局（横向单行，高度固定，不随输入状态变化）：
  * - 左：🎤 按钮，点按切回语音键行
- * - 中（垂直）：拼音组合区（如 "ni'hao"，无内容时隐藏）+ 横向滚动候选词列表
- * - 右：">" 按钮，有候选词时显示，点击展开浮层候选面板
+ * - 拼音小耳朵：圆角气泡，宽度随拼音长度动态变化；无拼音时隐藏（只影响横向排布，不改变栏高）
+ * - 中：横向滚动候选词列表
+ * - 右：">" 按钮，点击展开浮层候选面板
+ *
+ * 高度固定是刻意设计：拼音组合区不再占一整行显示/隐藏，
+ * 输入法窗口高度恒定，目标 App 的编辑区不会跟着伸缩闪烁。
  *
  * 候选浏览两种方式：
  * 1. 横向滑动候选栏（HorizontalScrollView，右边缘渐隐提示还有更多）
@@ -42,7 +46,7 @@ class CandidateBarView @JvmOverloads constructor(
     /** 点右端 ">"：展开浮层候选面板 */
     var onExpandCandidates: (() -> Unit)? = null
 
-    private val composingTv: TextView
+    private val earTv: TextView
     private val candidatesRow: LinearLayout
     private val expandBtn: TextView
 
@@ -54,6 +58,7 @@ class CandidateBarView @JvmOverloads constructor(
     private val textColor = if (isDark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
     private val hintColor = 0xFF8E8E93.toInt()
     private val panelBgColor = if (isDark) 0xFF2C2C2E.toInt() else 0xFFFFFFFF.toInt()
+    private val earBgColor = if (isDark) 0xFF3A3A3C.toInt() else 0xFFE8E8EA.toInt()
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -79,21 +84,32 @@ class CandidateBarView @JvmOverloads constructor(
         }
         addView(toggle, LayoutParams(dp(52), LayoutParams.MATCH_PARENT))
 
-        // 中：垂直排布组合区 + 候选词横滚
-        val right = LinearLayout(context).apply {
-            orientation = VERTICAL
-        }
-        composingTv = TextView(context).apply {
-            textSize = 13f
+        // 拼音小耳朵：圆角气泡，宽度随拼音长度动态变化；
+        // 无拼音时隐藏（只影响横向排布，不改变栏高）
+        earTv = TextView(context).apply {
+            textSize = 14f
             setTextColor(hintColor)
-            setPadding(dp(10), dp(2), dp(8), dp(2))
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(earBgColor)
+                cornerRadius = dp(8).toFloat()
+            }
+            val hPad = dp(10)
+            val vPad = dp(5)
+            setPadding(hPad, vPad, hPad, vPad)
             visibility = GONE
+            isFocusable = false
         }
-        right.addView(
-            composingTv,
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
-        )
+        addView(earTv, LayoutParams(
+            LayoutParams.WRAP_CONTENT,
+            LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            leftMargin = dp(2)
+            rightMargin = dp(6)
+        })
 
+        // 中：横向滚动候选词
         val scroll = HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
             // 右边缘渐隐：提示后面还有更多候选词
@@ -108,13 +124,9 @@ class CandidateBarView @JvmOverloads constructor(
             candidatesRow,
             LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT),
         )
-        right.addView(
-            scroll,
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
-        )
-        addView(right, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        addView(scroll, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
 
-        // 右：">" 展开按钮（有候选词时显示）
+        // 右：">" 展开按钮（始终占位，保持栏高稳定）
         expandBtn = TextView(context).apply {
             text = ">"
             textSize = 18f
@@ -122,7 +134,6 @@ class CandidateBarView @JvmOverloads constructor(
             gravity = Gravity.CENTER
             isClickable = true
             isFocusable = false
-            visibility = GONE
             setPadding(dp(8), dp(8), dp(8), dp(8))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -132,10 +143,10 @@ class CandidateBarView @JvmOverloads constructor(
         addView(expandBtn, LayoutParams(dp(40), LayoutParams.MATCH_PARENT))
     }
 
-    /** 设置拼音组合区文本（空则隐藏该行） */
+    /** 设置拼音小耳朵文本（空则隐藏气泡，不改变栏高） */
     fun setComposing(text: String) {
-        composingTv.text = text
-        composingTv.visibility = if (text.isEmpty()) GONE else VISIBLE
+        earTv.text = text
+        earTv.visibility = if (text.isEmpty()) GONE else VISIBLE
     }
 
     /** 设置候选词列表（重建全部候选项，不限数量） */
@@ -160,8 +171,7 @@ class CandidateBarView @JvmOverloads constructor(
             }
             candidatesRow.addView(tv)
         }
-        // 有候选词时才显示 ">" 展开按钮
-        expandBtn.visibility = if (list.isEmpty()) GONE else VISIBLE
+        // ">" 按钮始终占位（V47：固定栏高，不再随候选有无显示/隐藏）
     }
 
     /**

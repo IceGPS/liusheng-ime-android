@@ -29,6 +29,8 @@ class StubPinyinEngine : PinyinEngine {
 
     override fun getComposingText(): String = segment(sb.toString())
 
+    override fun rawInput(): String = sb.toString()
+
     override fun getCandidates(): List<String> {
         val raw = sb.toString()
         if (raw.isEmpty()) return emptyList()

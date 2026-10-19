@@ -126,7 +126,13 @@ class KotlinPinyinEngine(
         }
     }
 
-    data class Candidate(val word: String, val freq: Int, val consumedSyllables: Int)
+    data class Candidate(
+        val word: String,
+        val freq: Int,
+        val consumedSyllables: Int,
+        /** 首字母兜底候选：选中后清空整个输入缓冲 */
+        val consumeAll: Boolean = false,
+    )
 
     /**
      * 生成候选词列表。
@@ -134,36 +140,49 @@ class KotlinPinyinEngine(
      * 1. 完整输入的词组/整句候选（按词频）
      * 2. 逐段缩短的词组候选
      * 3. 首音节的单字候选
+     * 4. 兜底：输入无法切分音节时（如单个声母 "l"），按首字母给高频单字
      */
     fun getCandidates(maxCount: Int = 9): List<Candidate> {
         if (buffer.isEmpty()) return emptyList()
         val syllableOptions = parseSyllables()
-        if (syllableOptions.isEmpty()) return emptyList()
 
         val result = LinkedHashMap<String, Candidate>() // 去重保序
 
-        for (syllables in syllableOptions) {
-            // 1. 完整匹配
-            val fullKey = syllables.joinToString("")
-            for (e in dict.lookup(fullKey)) {
-                result.getOrPut(e.word) { Candidate(e.word, e.freq, syllables.size) }
-            }
-            // 2. 逐段缩短：从最长前缀开始
-            for (len in syllables.size - 1 downTo 1) {
-                val prefixKey = syllables.take(len).joinToString("")
-                for (e in dict.lookup(prefixKey)) {
-                    result.getOrPut(e.word) { Candidate(e.word, e.freq, len) }
+        if (syllableOptions.isNotEmpty()) {
+            for (syllables in syllableOptions) {
+                // 1. 完整匹配
+                val fullKey = syllables.joinToString("")
+                for (e in dict.lookup(fullKey)) {
+                    result.getOrPut(e.word) { Candidate(e.word, e.freq, syllables.size) }
+                }
+                // 2. 逐段缩短：从最长前缀开始
+                for (len in syllables.size - 1 downTo 1) {
+                    val prefixKey = syllables.take(len).joinToString("")
+                    for (e in dict.lookup(prefixKey)) {
+                        result.getOrPut(e.word) { Candidate(e.word, e.freq, len) }
+                    }
+                    if (result.size >= maxCount * 3) break
+                }
+                // 3. 首音节单字
+                val firstKey = syllables[0]
+                for (e in dict.lookup(firstKey)) {
+                    if (e.word.length == 1) {
+                        result.getOrPut(e.word) { Candidate(e.word, e.freq, 1) }
+                    }
                 }
                 if (result.size >= maxCount * 3) break
             }
-            // 3. 首音节单字
-            val firstKey = syllables[0]
-            for (e in dict.lookup(firstKey)) {
-                if (e.word.length == 1) {
-                    result.getOrPut(e.word) { Candidate(e.word, e.freq, 1) }
-                }
+        }
+
+        // 4. 兜底：无法切分（如单个声母）时，按首字母给高频单字动态提示
+        if (result.isEmpty()) {
+            val initial = when (mode) {
+                Mode.QUANPIN -> buffer[0].lowercaseChar()
+                Mode.XIAOHE -> xiaoheKeyToInitial(buffer[0])
             }
-            if (result.size >= maxCount * 3) break
+            for (e in dict.lookupByInitial(initial).take(maxCount)) {
+                result.getOrPut(e.word) { Candidate(e.word, e.freq, 1, consumeAll = true) }
+            }
         }
 
         // 排序：消耗音节数多者优先，同级按词频
@@ -174,9 +193,26 @@ class KotlinPinyinEngine(
     }
 
     /**
+     * 小鹤双拼首键 → 拼音首字母（用于首字母兜底候选）。
+     * v/i/u 是 zh/ch/sh 的声母键，映射到 z/c/s 组（含 zh/ch/sh 音节）；
+     * 其余键按自身字母处理（单键歧义时优先按声母解释）。
+     */
+    private fun xiaoheKeyToInitial(key: Char): Char = when (key.lowercaseChar()) {
+        'v' -> 'z' // zh
+        'i' -> 'c' // ch
+        'u' -> 's' // sh
+        else -> key.lowercaseChar()
+    }
+
+    /**
      * 选中候选词：返回上屏文本，并从 buffer 中消费对应音节。
      */
     fun selectCandidate(c: Candidate): String {
+        if (c.consumeAll) {
+            // 首字母兜底候选：整个输入缓冲一次消费完
+            buffer.clear()
+            return c.word
+        }
         when (mode) {
             Mode.QUANPIN -> {
                 // 计算消耗的原始按键数：前 consumedSyllables 个音节的总字母数
