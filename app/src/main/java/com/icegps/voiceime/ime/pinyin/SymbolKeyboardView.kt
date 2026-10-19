@@ -146,6 +146,17 @@ textAlign = Paint.Align.CENTER
 color = keyTextColor
 }
 
+/** emoji 画笔（空格键 🎤，与拼音键盘一致） */
+private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+textAlign = Paint.Align.CENTER
+alpha = 170
+}
+
+private fun textBaseline(r: RectF, p: Paint): Float {
+val fm = p.fontMetrics
+return r.centerY() - (fm.ascent + fm.descent) / 2
+}
+
 // ---------- 尺寸 ----------
 
 private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -220,10 +231,16 @@ k.isFunc -> funcBgColor
 else -> keyBgColor
 }
 canvas.drawRoundRect(r, cornerR, cornerR, bgPaint)
+if (k.action == Action.SPACE) {
+// 空格键画 🎤（与拼音键盘一致：长按=语音的视觉提示）
+emojiPaint.textSize = sp(22f)
+canvas.drawText("🎤", r.centerX(), textBaseline(r, emojiPaint), emojiPaint)
+} else {
 labelPaint.textSize = if (k.isFunc) sp(16f) else sp(22f)
 labelPaint.color = keyTextColor
 val fm = labelPaint.fontMetrics
 canvas.drawText(k.label, r.centerX(), r.centerY() - (fm.ascent + fm.descent) / 2, labelPaint)
+}
 }
 }
 
@@ -255,12 +272,19 @@ handler.postDelayed(spaceLongPressRunnable, 100L)
 return true
 }
 MotionEvent.ACTION_MOVE -> {
-// 未进入录音前滑出 10dp 则取消短按和长按，避免误触
-if (spaceTapValid &&!voiceRecording &&
-(abs(x - downX) > dp(10) || abs(y - downY) > dp(10))
-) {
+// V65：只在手指滑出空格键才取消长按。之前"相对落点漂移 10dp 就取消"
+// 太严格——长按时手指自然漂移/按压力变化会导致 centroid 漂移，
+// 在某些设备上 100ms 内就触发取消，表现为"长按永远不变红"。
+// 空格键很宽，键内漂移是正常的，不应取消。
+val k = pressedKey
+if (spaceTapValid && !voiceRecording && k?.action == Action.SPACE) {
+val r = k.rect
+val slop = dp(8).toFloat()
+if (x < r.left - slop || x > r.right + slop ||
+y < r.top - slop || y > r.bottom + slop) {
 spaceTapValid = false
 handler.removeCallbacks(spaceLongPressRunnable)
+}
 }
 return true
 }
