@@ -1,6 +1,6 @@
 # 留声输入法（Liusheng）Android 项目总结文档
 
-> 版本：V31（2026-10-13）
+> 版本：V70（2026-10-20）
 > 仓库：https://github.com/IceGPS/liusheng-ime-android
 > 目标读者：未来接手维护/升级的开发者
 
@@ -21,7 +21,7 @@
 | Fork CapsWriter，加 Android 端 | 全新 Kotlin 项目，只复用协议 |
 | 悬浮球 + 无障碍服务上屏 | 极简 IME（InputMethodService），系统原生上屏通道 |
 | MNN + Qwen3-ASR-0.6B 端侧 | sherpa-onnx + SenseVoice-Small（MNN 路线已放弃） |
-| 完整键盘 | 只有 6 个键：⇧ ⚙️ 🌐 🎤 ⌫ ⏎（+可展开的数字标点区） |
+| 完整键盘 | 四套键盘：极简语音 / 拼音（全拼+小鹤双拼）/ 符号 / 数字；底行统一为 [ABC/语音][符][123][🎤][。][⌫][⏎]（V67 起），候选栏右端 [📋][中/英][>]（V70 起） |
 
 ---
 
@@ -30,10 +30,13 @@
 ### 2.1 总体架构
 
 ```
-┌─────────────────────────────────────────────┐
-│  VoiceImeService (InputMethodService)        │
-│  极简键盘 UI：主行 + 数字/标点区（可折叠）      │
-└──────────┬──────────────────┬───────────────┘
+┌──────────────────────────────────────────────────────┐
+│  VoiceImeService (InputMethodService)                 │
+│  极简语音键盘（V67 起：可收起符号/数字区已退役）        │
+│  PinyinKeyboardView + PinyinInputController（拼音键盘） │
+│  SymbolKeyboardView（符号/数字键盘，V63 起完整实现）    │
+│  底行四套统一：[ABC/语音][符][123][🎤][。][⌫][⏎]       │
+└──────────┬──────────────────┬────────────────────────┘
            │                  │
     ┌──────▼──────┐    ┌─────▼────────┐
     │  Recorder   │    │ AsrBackend   │ ← 策略接口
@@ -45,13 +48,22 @@
     │  录音存 AAC/M4A + JSONL 转写日志          │
     │  → /sdcard/VoiceIME/（Syncthing 同步）    │
     └─────────────────────────────────────────┘
+    ┌──────▼──────────────────────────────────┐
+    │  ClipStore + ClipSyncManager（V69 起）    │
+    │  本机剪贴板历史（SQLite）+ 局域网共享      │
+    │  （mDNS 发现 + 配对 + AES-GCM，手机↔PC）  │
+    └─────────────────────────────────────────┘
 ```
 
 ### 2.2 模块说明
 
 | 模块 | 文件 | 职责 |
 |---|---|---|
-| 键盘服务 | `ime/VoiceImeService.kt`（504行） | InputMethodService；键盘 UI；录音手势；转写调度；文本上屏 |
+| 键盘服务 | `ime/VoiceImeService.kt` | InputMethodService；极简语音键盘 UI；录音手势；转写调度；文本上屏 |
+| 拼音键盘 | `ime/pinyin/PinyinKeyboardView.kt`、`PinyinInputController.kt` | 手绘 QWERTY；候选栏/浮层；中/英切换；剪贴板面板入口 |
+| 拼音引擎 | `ime/pinyin/PinyinEngine.kt` 等 | 纯 Kotlin 拼音引擎 + 雾凇词库（88 万词条）；小鹤双拼 |
+| 符号键盘 | `ime/pinyin/SymbolKeyboardView.kt`、`SymbolWidth.kt` | 符号 2 页 / 数字键盘；全角半角区分；点选停留连打 |
+| 剪贴板 | `service/clip/ClipStore.kt`、`ClipSyncManager.kt`、`ClipCrypto.kt` | SQLite 历史；mDNS 发现；配对；AES-GCM；手机↔PC 同步 |
 | 录音 | `service/Recorder.kt` | AudioRecord 采集 16kHz PCM；支持 VAD 自动停止 |
 | 端侧识别 | `service/asr/SherpaAsrBackend.kt` | sherpa-onnx + SenseVoice-Small INT8；离线转写 |
 | 局域网识别 | `service/asr/LanAsrBackend.kt` | WebSocket 连 PC 端（CapsWriter 协议，6016端口） |
@@ -111,10 +123,12 @@ JSONL 每行：
 
 1. Hongjie 提需求/反馈（通常带截图）
 2. Mica 改代码 → 本地提交 → push 到 GitHub（`master:main`）
-3. GitHub Actions 自动构建（约 1 分钟）
-4. Mica 下载 APK → `apksigner verify` 验签 → 核对 versionCode → 上传到 remote-storage
-5. 发给 Hongjie：APK 直链 + 字节数（让他核对下载完整性）+ 版本号 + 改动说明
+3. GitHub Actions 自动构建（约 5–10 分钟；注意按 workflow 名 + head_sha 过滤，勿取到 pages run）
+4. Mica 下载 artifact → `apksigner verify` 验签 → 核对 versionCode → 发 GitHub Release（附 APK + AAB）
+5. 告诉 Hongjie：版本号 + 提交 + CI run + 准确字节数（他自己去 GitHub Releases 下载，装前核对字节数）
 6. Hongjie 真机测试 → 反馈 → 下一轮
+
+**铁律**：只 `git add` 指定文件，绝不 `git add -A`（会误带 `app/libs/*.aar`、`dist/`、`icons/`、`tools/pinyin-data/`）。
 
 ### 3.3 版本号规则
 
@@ -125,10 +139,10 @@ JSONL 每行：
 ### 3.4 交付检查清单
 
 - [ ] `apksigner verify` 通过
-- [ ] 证书指纹与上一版一致（固定 keystore：`~/.voice-ime-debug.keystore`）
-- [ ] versionCode 确实递增
-- [ ] APK 包含 4 个 sherpa native 库（arm64-v8a）
-- [ ] 记录准确字节数，提醒用户核对
+- [ ] versionCode 确实递增（versionName = `0.<code>.0-v<code>`）
+- [ ] APK/AAB 已上传到 GitHub Release（v42 起每个版本都发 Release，不再用 CI artifacts 直链）
+- [ ] 记录准确字节数（V65 损坏下载事故后，装前必须核对）
+- [ ] targetSdk 35、AAB 随附（Play 上架要求，V59/V60 起）
 
 ---
 
@@ -216,13 +230,17 @@ but assetManager is NOT set to null.
 
 | 设置项 | Key | 默认值 |
 |---|---|---|
-| 转写引擎 | `asr_engine` | `sherpa`（端侧） |
-| 服务端 IP | `server_host` | 空 |
-| 服务端端口 | `server_port` | 6016 |
+| 转写引擎 | `asr_engine` | 端侧优先 |
+| 服务端 IP/端口 | `server_host` / `server_port` | 空 / 6016 |
 | VAD 开关 | `vad_enabled` | false |
 | VAD 静音时长 | `vad_silence_ms` | 1500ms |
-| 数字标点区展开 | `numpad_expanded` | false |
+| 键盘模式 | `kb_mode` | voice（语音/拼音持久化） |
+| 拼音方案 | `pinyin_scheme` | 全拼/小鹤 |
+| 模型地址 | `model_base_url` | HuggingFace 默认 |
 | 模型已就绪 | `model_ready` | false |
+| 剪贴板总开关 | `clip_enabled` | false（首次配对后自动开） |
+| 本机设备 ID | `clip_device_id` | 首次生成后持久化 |
+| 配对表 | `clip_paired_json` | 空 |
 
 **原则**：键盘主界面的每个可交互元素，状态都必须持久化，用户下次打开键盘时恢复。
 
@@ -230,11 +248,13 @@ but assetManager is NOT set to null.
 
 ## 六、已知待办 / 未来方向
 
-1. **mDNS 完整方案**：目前 Android 端只自动选第一台服务器；目标是多服务器列表、用户选择并记住、故障转移（首选不可用→试其他→端侧兜底）
-2. **Windows 端 mDNS 发布**：代码已写好（`mdns_publisher.py`），待 Hongjie 在 PC 上手动部署（`pip install zeroconf` + 放文件 + 改 `app.py` 三处）
-3. **VAD 阈值调优**：当前固定 RMS 0.02，未经充分真机验证，可能需要自适应环境噪声
-4. **Syncthing 配置指导**：待存储格式稳定后，指导 Hongjie 配置 `/sdcard/VoiceIME` 同步
-5. **iOS / macOS / Linux 版**：已做技术可行性分析，待 Hongjie 决策先做哪个平台
+1. **mDNS 多服务器**：目前 Android 端自动选第一台；目标是多服务器列表、用户选择并记住、故障转移（V26 起部分实现）
+2. **VAD 阈值调优**：当前固定 RMS 0.02，未经充分真机验证，可能需要自适应环境噪声
+3. **Syncthing 配置指导**：待存储格式稳定后，指导 Hongjie 配置 `/sdcard/VoiceIME` 同步
+4. **用户词典自学习**：拼音输入记住用户选词习惯，未做
+5. **剪贴板 v2**：极简键盘入口、历史搜索、图片条目、离线队列、TLS 通道
+6. **iOS / macOS / Linux 版**：待 Hongjie 决策平台顺序（iOS 键盘内录音已验证可行）
+7. **Play 上架**：Mica 侧已就绪（targetSdk 35、AAB、隐私政策、商店素材）；待 Hongjie：开发者账号、数据安全表、分级问卷、真机截图、USPTO 1(b) 决策
 
 ---
 
@@ -244,8 +264,8 @@ but assetManager is NOT set to null.
 - **Android 仓库**：https://github.com/IceGPS/liusheng-ime-android
 - **Windows 仓库**：https://github.com/IceGPS/CapsWriter-Offline
 - **模型**：sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17（INT8）
-- **签名**：`~/.voice-ime-debug.keystore`（固定，勿换）
-- **APK 分发**：remote-storage 直链 + 字节数核对（sandbox 附件下载曾出现过损坏）
+- **签名**：CI 用 GitHub secret `KEYSTORE_B64` 固定签名（pass:android）
+- **APK 分发**：GitHub Release（`https://github.com/IceGPS/liusheng-ime-android/releases`），每版附 APK + AAB；交付信息含版本/提交/CI run/字节数/签名验证，不再发直链（Hongjie 自己去 GitHub 下）
 
 ---
 
