@@ -16,16 +16,18 @@ import android.widget.ScrollView
 import android.widget.TextView
 
 /**
- * 拼音候选栏（V47）。
+ * 拼音候选栏（V47，V53 改版）。
  *
- * 布局（横向单行，高度固定，不随输入状态变化）：
- * - 左：🎤 按钮，点按切回语音键行
- * - 拼音小耳朵：圆角气泡，宽度随拼音长度动态变化；无拼音时隐藏（只影响横向排布，不改变栏高）
+ * 布局（横向单行，高度固定 52dp，对齐搜狗输入法，不随输入状态变化）：
+ * - 左：🎤 按钮，点按进入留声输入法设置界面
  * - 中：横向滚动候选词列表
  * - 右：">" 按钮，点击展开浮层候选面板
  *
- * 高度固定是刻意设计：拼音组合区不再占一整行显示/隐藏，
- * 输入法窗口高度恒定，目标 App 的编辑区不会跟着伸缩闪烁。
+ * 拼音小耳朵：悬浮气泡（仿搜狗），浮在候选栏左上方，不占栏内横向空间；
+ * 宽度随拼音长度动态变化，无拼音时隐藏。
+ *
+ * 高度固定是刻意设计：输入法窗口高度恒定，
+ * 目标 App 的编辑区不会跟着伸缩闪烁。
  *
  * 候选浏览两种方式：
  * 1. 横向滑动候选栏（HorizontalScrollView，右边缘渐隐提示还有更多）
@@ -37,8 +39,8 @@ class CandidateBarView @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : LinearLayout(context, attrs, defStyleAttr) {
 
-    /** 点左上角 🎤：切回语音键行 */
-    var onToggleVoice: (() -> Unit)? = null
+    /** 点左上角 🎤：进入留声输入法设置界面 */
+    var onOpenSettings: (() -> Unit)? = null
 
     /** 点候选词：按下标选中上屏 */
     var onCandidateClick: ((index: Int) -> Unit)? = null
@@ -46,9 +48,12 @@ class CandidateBarView @JvmOverloads constructor(
     /** 点右端 ">"：展开浮层候选面板 */
     var onExpandCandidates: (() -> Unit)? = null
 
-    private val earTv: TextView
     private val candidatesRow: LinearLayout
     private val expandBtn: TextView
+
+    /** 拼音小耳朵悬浮气泡 */
+    private var earPopup: PopupWindow? = null
+    private var earPopupTv: TextView? = null
 
     /** 浮层候选面板 */
     private var panelPopup: PopupWindow? = null
@@ -69,8 +74,8 @@ class CandidateBarView @JvmOverloads constructor(
         val pad = dp(4)
         setPadding(pad, pad, pad, pad)
 
-        // 左：切回语音键行
-        val toggle = TextView(context).apply {
+        // 左：进入设置
+        val settingsBtn = TextView(context).apply {
             text = "🎤"
             textSize = 20f
             gravity = Gravity.CENTER
@@ -79,35 +84,10 @@ class CandidateBarView @JvmOverloads constructor(
             setPadding(dp(8), dp(8), dp(8), dp(8))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                onToggleVoice?.invoke()
+                onOpenSettings?.invoke()
             }
         }
-        addView(toggle, LayoutParams(dp(52), LayoutParams.MATCH_PARENT))
-
-        // 拼音小耳朵：圆角气泡，宽度随拼音长度动态变化；
-        // 无拼音时隐藏（只影响横向排布，不改变栏高）
-        earTv = TextView(context).apply {
-            textSize = 14f
-            setTextColor(hintColor)
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                setColor(earBgColor)
-                cornerRadius = dp(8).toFloat()
-            }
-            val hPad = dp(10)
-            val vPad = dp(5)
-            setPadding(hPad, vPad, hPad, vPad)
-            visibility = GONE
-            isFocusable = false
-        }
-        addView(earTv, LayoutParams(
-            LayoutParams.WRAP_CONTENT,
-            LayoutParams.WRAP_CONTENT,
-        ).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            leftMargin = dp(2)
-            rightMargin = dp(6)
-        })
+        addView(settingsBtn, LayoutParams(dp(52), LayoutParams.MATCH_PARENT))
 
         // 中：横向滚动候选词
         val scroll = HorizontalScrollView(context).apply {
@@ -143,10 +123,85 @@ class CandidateBarView @JvmOverloads constructor(
         addView(expandBtn, LayoutParams(dp(40), LayoutParams.MATCH_PARENT))
     }
 
-    /** 设置拼音小耳朵文本（空则隐藏气泡，不改变栏高） */
+    /**
+     * 设置拼音小耳朵文本（仿搜狗：悬浮气泡浮在候选栏左上方，宽度随拼音动态变化）。
+     * 空则隐藏气泡。
+     */
     fun setComposing(text: String) {
-        earTv.text = text
-        earTv.visibility = if (text.isEmpty()) GONE else VISIBLE
+        if (text.isEmpty() || !isAttachedToWindow) {
+            dismissEarBubble()
+            return
+        }
+        val tv = earPopupTv
+        if (earPopup?.isShowing == true && tv != null) {
+            tv.text = text
+            // 按新文本重新测量，更新浮层尺寸（位置保持左上锚定）
+            tv.measure(
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            )
+            val w = tv.measuredWidth
+            val h = tv.measuredHeight
+            try {
+                earPopup?.update(this, dp(8), -h - dp(2), w, h)
+            } catch (e: Exception) {
+                dismissEarBubble()
+            }
+        } else {
+            showEarBubble(text)
+        }
+    }
+
+    /** 显示拼音小耳朵悬浮气泡（本栏左上方） */
+    private fun showEarBubble(text: String) {
+        dismissEarBubble()
+        if (!isAttachedToWindow || width == 0) return
+        try {
+            val tv = TextView(context).apply {
+                this.text = text
+                textSize = 14f
+                setTextColor(hintColor)
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    setColor(earBgColor)
+                    cornerRadius = dp(8).toFloat()
+                }
+                setPadding(dp(10), dp(5), dp(10), dp(5))
+                isFocusable = false
+            }
+            tv.measure(
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            )
+            val w = tv.measuredWidth
+            val h = tv.measuredHeight
+            earPopupTv = tv
+            earPopup = PopupWindow(tv, w, h, false).apply {
+                // 纯展示气泡：不抢焦点、不拦截触摸
+                isTouchable = false
+                isOutsideTouchable = false
+                setBackgroundDrawable(ColorDrawable(0x00000000))
+                inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
+            }
+            // 显示在本栏上方：x=8dp 左对齐，y 偏移 = -(气泡高 + 2dp 间隙)
+            earPopup?.showAsDropDown(this, dp(8), -h - dp(2))
+        } catch (e: Exception) {
+            // 悬浮失败不影响主流程（候选栏本身仍可用）
+            dismissEarBubble()
+        }
+    }
+
+    /** 关闭拼音小耳朵悬浮气泡（已关闭时无操作） */
+    fun dismissEarBubble() {
+        earPopup?.dismiss()
+        earPopup = null
+        earPopupTv = null
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        dismissEarBubble()
+        dismissCandidatePanel()
     }
 
     /** 设置候选词列表（重建全部候选项，不限数量） */

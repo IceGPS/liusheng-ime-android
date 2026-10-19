@@ -42,6 +42,9 @@ class PinyinInputController(
      */
     var onExpandCandidates: (() -> Unit)? = null
 
+    /** 点候选栏左上角 🎤：进入留声输入法设置（由 VoiceImeService 接入） */
+    var onOpenSettings: (() -> Unit)? = null
+
     /** 空格麦克风按住开始录音（由 VoiceImeService 接入 startRecording） */
     var onVoiceRecordStart: (() -> Unit)? = null
 
@@ -75,7 +78,7 @@ class PinyinInputController(
             }
             override fun onVoiceRecordStop() { onVoiceRecordStop?.invoke() }
         }
-        bar.onToggleVoice = { switchToVoice() }
+        bar.onOpenSettings = { onOpenSettings?.invoke() }
         bar.onCandidateClick = { selectCandidate(it) }
         bar.onExpandCandidates = { onExpandCandidates?.invoke() ?: expandCandidatePanel() }
         refresh()

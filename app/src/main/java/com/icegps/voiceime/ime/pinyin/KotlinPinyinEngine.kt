@@ -140,6 +140,8 @@ class KotlinPinyinEngine(
      * 1. 完整输入的词组/整句候选（按词频）
      * 2. 逐段缩短的词组候选
      * 3. 首音节的单字候选
+     * 3.5 尾部不完整声母扩展：完整前缀词组 × 尾声母高频单字
+     *     （如 "zhongguor" → 中国人/中国热…，而不只给首字候选）
      * 4. 兜底：输入无法切分音节时（如单个声母 "l"），按首字母给高频单字
      */
     fun getCandidates(maxCount: Int = 9): List<Candidate> {
@@ -174,6 +176,14 @@ class KotlinPinyinEngine(
             }
         }
 
+        // 3.5 尾部不完整声母扩展：完整前缀词组 × 尾声母高频单字
+        //     （如 "zhongguor" → 中国人/中国热…，而不只给首字候选）
+        if (result.isEmpty()) {
+            for (c in trailingInitialCandidates()) {
+                result.getOrPut(c.word) { c }
+            }
+        }
+
         // 4. 兜底：无法切分（如单个声母）时，按首字母给高频单字动态提示
         if (result.isEmpty()) {
             val initial = when (mode) {
@@ -202,6 +212,60 @@ class KotlinPinyinEngine(
         'i' -> 'c' // ch
         'u' -> 's' // sh
         else -> key.lowercaseChar()
+    }
+
+    /** 单字母拼音声母（含 y/w） */
+    private fun isPinyinInitial(c: Char): Boolean = c in "bpmfdtnlgkhjqxrzcsyw"
+
+    /**
+     * "完整前缀 + 尾部不完整声母" 解析（如 "zhongguor" → [zhong, guo] + 'r'）。
+     * 只处理尾部单个声母字母的情形（最常见：刚按下个音节的首字母）。
+     */
+    private fun parseWithTrailingInitial(): Pair<List<String>, Char>? {
+        if (buffer.length < 2) return null
+        return when (mode) {
+            Mode.QUANPIN -> {
+                val initial = buffer.last().lowercaseChar()
+                if (!isPinyinInitial(initial)) return null
+                val segs = PinyinSyllables.segment(buffer.substring(0, buffer.length - 1))
+                if (segs.isEmpty()) null else segs[0] to initial
+            }
+            Mode.XIAOHE -> {
+                // 双拼：偶数位是完整双拼，末位单键是下个音节的声母
+                if (buffer.length % 2 == 0 || buffer.length < 3) return null
+                val initial = xiaoheKeyToInitial(buffer.last())
+                val pairPart = buffer.substring(0, buffer.length - 1)
+                val groups = mutableListOf<String>()
+                var i = 0
+                while (i < pairPart.length) {
+                    val syls = ShuangpinMapper.keysToSyllables(pairPart.substring(i, i + 2))
+                    if (syls.isEmpty()) return null
+                    groups.add(syls[0])
+                    i += 2
+                }
+                groups to initial
+            }
+        }
+    }
+
+    /**
+     * 尾部不完整声母扩展候选：完整前缀的词组 × 尾声母高频单字。
+     * 如 "zhongguor" → 中国人/中国热…（consumedSyllables 按前缀音节数+1 计，
+     * 排序时优先于纯前缀词组）。
+     */
+    private fun trailingInitialCandidates(): List<Candidate> {
+        val (syllables, initial) = parseWithTrailingInitial() ?: return emptyList()
+        val prefixWords = dict.lookup(syllables.joinToString("")).take(15)
+        if (prefixWords.isEmpty()) return emptyList()
+        val chars = dict.lookupByInitial(initial).take(8)
+        if (chars.isEmpty()) return emptyList()
+        val out = ArrayList<Candidate>(prefixWords.size * chars.size)
+        for (w in prefixWords) {
+            for (c in chars) {
+                out.add(Candidate(w.word + c.word, w.freq, syllables.size + 1))
+            }
+        }
+        return out
     }
 
     /**

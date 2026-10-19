@@ -71,13 +71,14 @@ class VoiceImeService : InputMethodService() {
             setBackgroundColor(bgColor)
         }
 
-        // 候选栏：拼音模式下显示（拼音小耳朵 + 候选词横滚）。
-        // 高度固定 60dp：输入法窗口高度恒定，目标 App 编辑区不随输入状态伸缩闪烁。
+        // 候选栏：拼音模式下显示（候选词横滚；拼音小耳朵为悬浮气泡，不占栏内空间）。
+        // 高度固定 52dp（对齐搜狗输入法候选栏高度）：输入法窗口高度恒定，
+        // 目标 App 编辑区不随输入状态伸缩闪烁。
         val candidateBar = CandidateBarView(ctx).apply {
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(60),
+                dp(52),
             )
         }
         this.candidateBar = candidateBar
@@ -530,6 +531,13 @@ class VoiceImeService : InputMethodService() {
             // 拼音键盘空格麦克风：按住录音、松开转写（与极简语音键盘同一套录音链路）
             onVoiceRecordStart = { startRecording() }
             onVoiceRecordStop = { stopAndTranscribe() }
+            // 候选栏左上角 🎤：进入留声输入法设置界面
+            onOpenSettings = {
+                val intent = android.content.Intent(
+                    ctx, com.icegps.voiceime.ui.SettingsActivity::class.java)
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                ctx.startActivity(intent)
+            }
         }
 
         // 顺序：候选栏、语音模式、拼音键盘
