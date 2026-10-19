@@ -69,6 +69,8 @@ class VoiceImeService : InputMethodService() {
     private val uiHandler = Handler(Looper.getMainLooper())
     private val recorder = Recorder()
     private var sherpaBackend: SherpaAsrBackend? = null
+    /** 设置键（长按切换 VAD，键面圆点表示开关状态） */
+    private var settingsBtn: Button? = null
 
     // 长按退格连续删除
     private val backspaceHandler = Handler(Looper.getMainLooper())
@@ -326,26 +328,44 @@ class VoiceImeService : InputMethodService() {
         // 设置键：打开设置页（放最左：切换服务端/端侧模型）
         val settingsBtn = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
-            text = "⚙️"
+            // VAD 开关状态直接显示在设置键上（默认关闭）
+            text = if (Prefs.isVadEnabled(ctx)) "⚙️•" else "⚙️"
             textSize = 22f
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
                 marginEnd = dp(2)
             }
         }
+        this.settingsBtn = settingsBtn
+        // 点按=打开设置；长按（500ms）=开关 VAD（默认关闭）
+        var settingsDownTime = 0L
         settingsBtn.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    settingsDownTime = android.os.SystemClock.uptimeMillis()
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     v.alpha = 1f
-                    v.performClick()
-                    val intent = android.content.Intent(ctx, com.icegps.voiceime.ui.SettingsActivity::class.java)
-                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    ctx.startActivity(intent)
+                    if (android.os.SystemClock.uptimeMillis() - settingsDownTime > 500) {
+                        // 长按：切换 VAD
+                        val newVal = !Prefs.isVadEnabled(ctx)
+                        Prefs.setVadEnabled(ctx, newVal)
+                        settingsBtn.text = if (newVal) "⚙️•" else "⚙️"
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                        Toast.makeText(
+                            ctx,
+                            if (newVal) "VAD 已开启：点按说话，静音自动停止" else "VAD 已关闭：按住说话",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    } else {
+                        v.performClick()
+                        val intent = android.content.Intent(ctx, com.icegps.voiceime.ui.SettingsActivity::class.java)
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        ctx.startActivity(intent)
+                    }
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
