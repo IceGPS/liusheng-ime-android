@@ -166,7 +166,7 @@ jobs:
           "$BT/aapt2" link -o "$BUILD_DIR/base.apk" \
             --java "$BUILD_DIR/gen" \
             --manifest "$BUILD_DIR/AndroidManifest.xml" \
-            --min-sdk-version 26 --target-sdk-version 34 \
+            --min-sdk-version 26 --target-sdk-version 35 \
             --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
             -A "$PROJ_DIR/app/src/main/assets" \
             -I "$PLATFORM" "$BUILD_DIR"/compiled-res/*.flat
