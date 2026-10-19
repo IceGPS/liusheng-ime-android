@@ -86,10 +86,6 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 invalidate()
             }
         }
-        set(v) {
-            field = v
-            invalidate()
-        }
 
     // ---------- 按键模型 ----------
 
