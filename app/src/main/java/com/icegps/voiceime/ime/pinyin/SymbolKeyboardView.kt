@@ -224,9 +224,10 @@ for (k in allKeys) {
 val r = k.rect
 if (r.isEmpty) continue
 bgPaint.color = when {
-k === pressedKey -> pressedColor
-// 录音中：整个空格键变红（与极简/拼音键盘一致）
+// 录音中：整个空格键显示红色（优先于按下态，与拼音键盘一致，
+// 否则手指按住时 pressedKey 的按灰会盖住红色）
 k.action == Action.SPACE && voiceRecording -> 0xFFE53935.toInt()
+k === pressedKey -> pressedColor
 k.isFunc -> funcBgColor
 else -> keyBgColor
 }
@@ -242,6 +243,27 @@ val fm = labelPaint.fontMetrics
 canvas.drawText(k.label, r.centerX(), r.centerY() - (fm.ascent + fm.descent) / 2, labelPaint)
 }
 }
+}
+
+// ---------- 退格长按连续删除（与拼音/极简键盘一致） ----------
+
+private var backspaceRepeat: Runnable? = null
+
+private fun startBackspaceRepeat() {
+stopBackspaceRepeat()
+val r = object : Runnable {
+override fun run() {
+listener?.onBackspace()
+handler.postDelayed(this, 60)
+}
+}
+backspaceRepeat = r
+handler.postDelayed(r, 400)
+}
+
+private fun stopBackspaceRepeat() {
+backspaceRepeat?.let { handler.removeCallbacks(it) }
+backspaceRepeat = null
 }
 
 // ---------- 触摸 ----------
@@ -264,7 +286,11 @@ downX = x
 downY = y
 invalidate()
 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-if (k.action == Action.SPACE) {
+if (k.action == Action.BACKSPACE) {
+// 点按立即删一个，长按 400ms 后连续删（与拼音/极简键盘一致）
+listener?.onBackspace()
+startBackspaceRepeat()
+} else if (k.action == Action.SPACE) {
 // 空格键：短按=空格，长按 100ms=语音输入
 spaceTapValid = true
 handler.postDelayed(spaceLongPressRunnable, 100L)
@@ -290,6 +316,7 @@ return true
 }
 MotionEvent.ACTION_UP -> {
 handler.removeCallbacks(spaceLongPressRunnable)
+stopBackspaceRepeat()
 if (voiceRecording) {
 // 长按录音结束：直接停止转写，不走点按逻辑
 voiceRecording = false
@@ -299,7 +326,8 @@ listener?.onVoiceRecordStop()
 spaceTapValid = false
 val k = pressedKey
 val up = findKey(x, y)
-if (k!= null && up === k) fireKey(k)
+// 退格已在 DOWN 时处理（立即删一个+长按连删），UP 不再重复触发
+if (k!= null && up === k && k.action != Action.BACKSPACE) fireKey(k)
 }
 pressedKey = null
 invalidate()
@@ -307,6 +335,7 @@ return true
 }
 MotionEvent.ACTION_CANCEL -> {
 handler.removeCallbacks(spaceLongPressRunnable)
+stopBackspaceRepeat()
 spaceTapValid = false
 if (voiceRecording) {
 voiceRecording = false
@@ -323,7 +352,7 @@ return super.onTouchEvent(event)
 private fun fireKey(k: Key) {
 when (k.action) {
 Action.SYMBOL -> listener?.onSymbolKey(k.label)
-Action.BACKSPACE -> listener?.onBackspace()
+// BACKSPACE 不走这里：已在 DOWN 时处理（立即删一个+长按连删）
 Action.ENTER -> listener?.onEnter()
 Action.SPACE -> listener?.onSpace()
 Action.ABC -> listener?.onBackToLetters()
