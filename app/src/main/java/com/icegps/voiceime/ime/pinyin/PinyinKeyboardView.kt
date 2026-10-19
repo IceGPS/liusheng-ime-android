@@ -28,6 +28,7 @@ import kotlin.math.abs
  *
  * 交互：
  * - 点按字母键：输入字母；按住字母键上滑约半个键高：输入上标的数字/符号并弹预览框
+ * - ⇪ 键：Caps Lock 开关（默认小写，按一下全键盘变大写，再按一下变回小写）
  * - 退格键：点按删一个，长按连续删除
  * - 空格键：短按=空格，长按 100ms=语音输入（不限按压位置）
  * - 跟随系统深浅色
@@ -114,7 +115,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
 
     // 第 2 行：Shift + Z～M + 退格
     private val row2: List<Key> = buildList {
-        add(Key("↑", null, Action.SHIFT, 1.5f, true))
+        add(Key("⇪", null, Action.SHIFT, 1.5f, true))
         add(Key("Z", "(", Action.LETTER, 1f, false))
         add(Key("X", ")", Action.LETTER, 1f, false))
         add(Key("C", "-", Action.LETTER, 1f, false))
@@ -282,7 +283,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
             // 录音中：整个空格键显示红色（与极简键盘空格键一致，手指遮挡也能看到）
             k.action == Action.SPACE && voiceRecording -> 0xFFE53935.toInt()
             k === pressedKey -> pressedColor
-            k.action == Action.SHIFT && (shifted || capsLock) -> accentColor
+            k.action == Action.SHIFT && capsLock -> accentColor
             k.isFunc -> funcBgColor
             else -> keyBgColor
         }
@@ -301,8 +302,8 @@ class PinyinKeyboardView @JvmOverloads constructor(
             Action.SHIFT -> {
                 labelPaint.textSize = sp(20f)
                 labelPaint.color =
-                    if (shifted || capsLock) 0xFFFFFFFF.toInt() else keyTextColor
-                canvas.drawText("↑", r.centerX(), textBaseline(r, labelPaint), labelPaint)
+                    if (capsLock) 0xFFFFFFFF.toInt() else keyTextColor
+                canvas.drawText("⇪", r.centerX(), textBaseline(r, labelPaint), labelPaint)
                 labelPaint.color = keyTextColor
             }
             else -> {
@@ -310,8 +311,10 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 labelPaint.color = keyTextColor
                 // 有上标时主标签略下移，避免重叠
                 val cy = if (k.hint != null) r.centerY() + dp(5) else r.centerY()
+                // 字母键跟随 Caps Lock 状态显示大小写
+                val label = if (k.action == Action.LETTER && !capsLock) k.label.lowercase() else k.label
                 canvas.drawText(
-                    k.label, r.centerX(),
+                    label, r.centerX(),
                     cy - (labelPaint.fontMetrics.ascent + labelPaint.fontMetrics.descent) / 2,
                     labelPaint,
                 )
@@ -363,8 +366,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
     /** 是否已进入“上滑输符号”模式 */
     private var swipeArmed = false
 
-    /** Shift 状态：单击一次大写（下次按键后恢复），双击大写锁定 */
-    private var shifted = false
+    /** Caps Lock 状态：默认小写；点按 ⇪ 键切换，字母键显示与输出同步大小写 */
     private var capsLock = false
 
     private val handler = Handler(Looper.getMainLooper())
@@ -461,27 +463,13 @@ class PinyinKeyboardView @JvmOverloads constructor(
         when (k.action) {
             Action.LETTER -> {
                 var ch = k.label[0]
-                if (!shifted && !capsLock) ch = ch.lowercaseChar()
+                if (!capsLock) ch = ch.lowercaseChar()
                 listener?.onLetter(ch)
-                // 单次大写：用过一次后恢复
-                if (shifted && !capsLock) {
-                    shifted = false
-                    invalidate()
-                }
+                invalidate()
             }
             Action.SHIFT -> {
-                // 单击：小写→单次大写→大写锁定→小写，循环
-                when {
-                    capsLock -> {
-                        capsLock = false
-                        shifted = false
-                    }
-                    shifted -> {
-                        shifted = false
-                        capsLock = true
-                    }
-                    else -> shifted = true
-                }
+                // ⇪ 键：Caps Lock 开关，按一下大写，再按一下小写
+                capsLock = !capsLock
                 listener?.onShift()
                 invalidate()
             }
