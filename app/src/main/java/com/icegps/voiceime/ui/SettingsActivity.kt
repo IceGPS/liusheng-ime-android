@@ -42,8 +42,7 @@ class SettingsActivity : Activity() {
     private lateinit var hostEdit: EditText
     private lateinit var portEdit: EditText
     private lateinit var pairedContainer: LinearLayout
-    private lateinit var userDictContainer: LinearLayout
-    private lateinit var userDictCountLabel: TextView
+    private lateinit var userDictEntryBtn: Button
 
     /** 配对列表变化时刷新（例如电脑端主动取消配对） */
     private val clipSyncListener = object : ClipSyncManager.Listener {
@@ -155,25 +154,16 @@ class SettingsActivity : Activity() {
         ClipSyncManager.addListener(clipSyncListener)
         refreshPairedList()
 
-        // ---------- 个人词典（V72，自学习） ----------
+        // ---------- 个人词典（V73：独立管理页，入口放设置页） ----------
         root.addView(sectionTitle("个人词典（自学习）"))
         root.addView(label("点选候选词会被记住（选 2 次以上置顶）；连续点选单字自动造词。长按候选栏的词也可删除。"))
-        userDictCountLabel = label("")
-        root.addView(userDictCountLabel)
-        userDictContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        root.addView(userDictContainer)
-        val clearDictBtn = Button(this).apply {
-            text = "清空个人词典"
+        userDictEntryBtn = Button(this).apply {
             setOnClickListener {
-                com.icegps.voiceime.ime.pinyin.UserDict.clear()
-                refreshUserDictList()
-                toast("个人词典已清空")
+                startActivity(android.content.Intent(this@SettingsActivity, UserDictActivity::class.java))
             }
         }
-        root.addView(clearDictBtn)
-        refreshUserDictList()
+        root.addView(userDictEntryBtn)
+        refreshUserDictEntry()
 
         // ---------- 端侧模型 ----------
         root.addView(sectionTitle("端侧模型（SenseVoice-Small INT8，约 230MB）"))
@@ -280,7 +270,7 @@ class SettingsActivity : Activity() {
         super.onResume()
         if (!downloading) refreshModelStatus()
         if (::pairedContainer.isInitialized) refreshPairedList()
-        if (::userDictContainer.isInitialized) refreshUserDictList()
+        if (::userDictEntryBtn.isInitialized) refreshUserDictEntry()
     }
 
     override fun onDestroy() {
@@ -489,43 +479,12 @@ class SettingsActivity : Activity() {
         finish()
     }
 
-    // ---------- 个人词典（V72） ----------
+    // ---------- 个人词典入口（V73） ----------
 
-    /** 刷新个人词典条目列表（词、拼音、频次 + 逐条删除） */
-    private fun refreshUserDictList() {
+    /** 刷新入口行条数 */
+    private fun refreshUserDictEntry() {
         com.icegps.voiceime.ime.pinyin.UserDict.init(this)
-        val entries = com.icegps.voiceime.ime.pinyin.UserDict.listAll()
-        userDictCountLabel.text = "已学习 ${com.icegps.voiceime.ime.pinyin.UserDict.count()} 个词"
-        userDictContainer.removeAllViews()
-        if (entries.isEmpty()) {
-            userDictContainer.addView(label("（空）"))
-            return
-        }
-        entries.forEach { uw ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-            }
-            val infoTv = TextView(this).apply {
-                text = "${uw.word}（${uw.pinyin}）×${uw.freq}"
-                textSize = 14f
-                setTextColor(Color.DKGRAY)
-            }
-            row.addView(
-                infoTv,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-            )
-            val delBtn = Button(this).apply {
-                text = "删除"
-                setOnClickListener {
-                    com.icegps.voiceime.ime.pinyin.UserDict.deleteByWord(uw.word)
-                    refreshUserDictList()
-                    toast("已删除“${uw.word}”")
-                }
-            }
-            row.addView(delBtn)
-            userDictContainer.addView(row)
-        }
+        userDictEntryBtn.text = "个人词典（${com.icegps.voiceime.ime.pinyin.UserDict.count()} 条）>"
     }
 
     // ---------- 小工具 ----------

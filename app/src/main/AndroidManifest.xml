@@ -40,6 +40,11 @@
             android:label="@string/app_full_name"
             android:exported="false" />
 
+        <activity
+            android:name=".ui.UserDictActivity"
+            android:label="个人词典"
+            android:exported="false" />
+
         <!-- 极简语音输入法 -->
         <service
             android:name=".ime.VoiceImeService"
