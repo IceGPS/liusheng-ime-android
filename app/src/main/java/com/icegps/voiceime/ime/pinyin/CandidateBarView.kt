@@ -21,7 +21,7 @@ import android.widget.TextView
  * 布局（横向单行，高度固定 52dp，对齐搜狗输入法，不随输入状态变化）：
  * - 左：🎤 按钮，点按进入留声输入法设置界面
  * - 中：横向滚动候选词列表
- * - 右：">" 按钮，点击展开浮层候选面板
+ * - 右：三个独立键（V70）：📋 打开剪贴板面板、中/英切换、">" 展开浮层候选面板
  *
  * 拼音小耳朵：悬浮气泡（仿搜狗），浮在候选栏左上方，不占栏内横向空间；
  * 宽度随拼音长度动态变化，无拼音时隐藏。
@@ -45,7 +45,7 @@ class CandidateBarView @JvmOverloads constructor(
     /** 点右端"📋"：打开剪贴板历史面板（V69：最高频功能占最顺手的位置） */
     var onClipboardClick: (() -> Unit)? = null
 
-    /** 长按右端"📋"：切换中英文输入（V69：中/英从点击改为长按） */
+    /** 点右端"中/英"：切换中英文输入（V70：三独立键，点按切换） */
     var onLangToggle: (() -> Unit)? = null
 
     /** 点候选词：按下标选中上屏 */
@@ -57,6 +57,7 @@ class CandidateBarView @JvmOverloads constructor(
     private val candidatesRow: LinearLayout
     private val expandBtn: TextView
     private val clipBtn: TextView
+    private val langBtn: TextView
 
     /** 拼音小耳朵悬浮气泡 */
     private var earPopup: PopupWindow? = null
@@ -113,11 +114,11 @@ class CandidateBarView @JvmOverloads constructor(
         )
         addView(scroll, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
 
-        // 右：剪贴板（V69）：点击打开剪贴板历史面板，长按切换中/英。
-        // 键面保留中/英文字（V67 的指示器传统）：中文"📋中"蓝色，英文"📋英"灰色。
+        // 右：剪贴板（V69）：点击打开剪贴板历史面板。
+        // V70：拆为独立键（不再长按切语言，避免热区混淆）。
         clipBtn = TextView(context).apply {
-            text = "📋中"
-            textSize = 15f
+            text = "📋"
+            textSize = 18f
             gravity = Gravity.CENTER
             isClickable = true
             isFocusable = false
@@ -126,13 +127,24 @@ class CandidateBarView @JvmOverloads constructor(
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 onClipboardClick?.invoke()
             }
-            setOnLongClickListener {
-                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
+        addView(clipBtn, LayoutParams(dp(48), LayoutParams.MATCH_PARENT))
+
+        // 右：中/英切换（V70：从 📋 长按拆为独立键，点按切换；
+        // V67 样式：中文蓝色高亮，英文灰色）
+        langBtn = TextView(context).apply {
+            text = "中"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = false
+            setPadding(dp(6), dp(8), dp(6), dp(8))
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 onLangToggle?.invoke()
-                true
             }
         }
-        addView(clipBtn, LayoutParams(dp(56), LayoutParams.MATCH_PARENT))
+        addView(langBtn, LayoutParams(dp(48), LayoutParams.MATCH_PARENT))
 
         // 右：">" 展开按钮（始终占位，保持栏高稳定）
         expandBtn = TextView(context).apply {
@@ -152,13 +164,13 @@ class CandidateBarView @JvmOverloads constructor(
     }
 
     /**
-     * 设置中/英指示器（V67）：中文模式显示"📋中"（高亮），英文模式显示"📋英"。
-     * V69：键面加上 📋（点击=剪贴板面板），长按切换中/英。
+     * 设置中/英指示器（V67 样式，V70 恢复为独立键）：
+     * 中文模式显示"中"（蓝色 0xFF007AFF 高亮），英文模式显示"英"（灰色）。
      */
     fun setLangIndicator(isChinese: Boolean) {
-        clipBtn.text = if (isChinese) "📋中" else "📋英"
+        langBtn.text = if (isChinese) "中" else "英"
         // 高亮当前：中文用蓝色，英文用灰色（与拼音键盘原中/英键一致）
-        clipBtn.setTextColor(if (isChinese) 0xFF007AFF.toInt() else hintColor)
+        langBtn.setTextColor(if (isChinese) 0xFF007AFF.toInt() else hintColor)
     }
 
     /**

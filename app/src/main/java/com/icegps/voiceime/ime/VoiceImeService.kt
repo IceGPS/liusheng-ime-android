@@ -10,6 +10,9 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Toast
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
 import com.icegps.voiceime.ime.pinyin.CandidateBarView
 import com.icegps.voiceime.ime.pinyin.ClipPanelView
 import com.icegps.voiceime.ime.pinyin.PinyinDictionary
@@ -289,7 +292,12 @@ class VoiceImeService : InputMethodService() {
         // 位置：空格键与退格键之间（四套键盘统一底行）
         val punctBtn = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
-            text = "。"
+            // V70：键面同时显示 ，（上滑，缩小置顶）和 。（主）；
+            // 与手绘键盘上标惯例一致（上滑字符在上，点按字符在下）。
+            // 极简键盘固定全角（无中/英切换 UI），逗号恒为全角 ，。
+            text = SpannableStringBuilder("，\n。").apply {
+                setSpan(RelativeSizeSpan(0.55f), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             textSize = 20f
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {

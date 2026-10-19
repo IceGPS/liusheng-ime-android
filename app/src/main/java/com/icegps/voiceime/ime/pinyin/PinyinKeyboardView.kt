@@ -139,7 +139,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
         add(Key("符", null, Action.SYMBOL_PAGE, 1.0f, true))
         add(Key("123", null, Action.DIGIT_PAGE, 1.0f, true))
         add(Key("", null, Action.SPACE, 2.8f, false)) // 空格：短按=空格，长按=语音输入
-        add(Key("", null, Action.PERIOD, 1.0f, true)) // 。：点按=句号，上滑=逗号
+        add(Key("", ",", Action.PERIOD, 1.0f, true)) // 。：点按=句号，上滑=逗号；hint 显示上滑字符（与字母键上标惯例一致，V70）
         add(Key("⌫", null, Action.BACKSPACE, 1.2f, true)) // 点按删一个，长按连删
         add(Key("⏎", null, Action.ENTER, 1.4f, true))
     }

@@ -164,6 +164,12 @@ textAlign = Paint.Align.CENTER
 alpha = 170
 }
 
+/** 上标 hint 画笔（。 键的上滑逗号，与拼音键盘字母键上标惯例一致，V70） */
+private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+textAlign = Paint.Align.CENTER
+color = 0xFF8E8E93.toInt()
+}
+
 private fun textBaseline(r: RectF, p: Paint): Float {
 val fm = p.fontMetrics
 return r.centerY() - (fm.ascent + fm.descent) / 2
@@ -254,7 +260,15 @@ labelPaint.textSize = if (k.isFunc) sp(16f) else sp(22f)
 labelPaint.color = keyTextColor
 labelPaint.alpha = if (k.dimmed) 90 else 255
 val fm = labelPaint.fontMetrics
+if (k.action == Action.PUNCT) {
+// V70：。 键显示上滑字符（小字置顶，跟随中/英；与拼音键盘字母键上标惯例一致）
+hintPaint.textSize = sp(11f)
+canvas.drawText(if (isChineseMode) "，" else ",", r.centerX(), r.top + sp(14f), hintPaint)
+// 有上标时主标签略下移，避免重叠
+canvas.drawText(k.label, r.centerX(), r.centerY() + dp(5) - (fm.ascent + fm.descent) / 2, labelPaint)
+} else {
 canvas.drawText(k.label, r.centerX(), r.centerY() - (fm.ascent + fm.descent) / 2, labelPaint)
+}
 labelPaint.alpha = 255
 }
 }

@@ -90,7 +90,7 @@ class PinyinInputController(
         bar.onOpenSettings = { onOpenSettings?.invoke() }
         bar.onCandidateClick = { selectCandidate(it) }
         bar.onExpandCandidates = { onExpandCandidates?.invoke() ?: expandCandidatePanel() }
-        bar.onLangToggle = { toggleLang() } // V67：中/英在候选栏右侧；V69：改为长按触发
+        bar.onLangToggle = { toggleLang() } // V70：中/英为候选栏右端独立键，点按切换
         bar.onClipboardClick = { toggleClipPanel() } // V69：点击打开剪贴板历史面板
         com.icegps.voiceime.service.clip.ClipStore.addListener(clipStoreListener)
         refresh()
@@ -344,7 +344,7 @@ class PinyinInputController(
         keyboard?.isChineseMode = isChinese
         symbolKeyboard?.isChineseMode = isChinese // V68：符号/数字键盘 。 键跟随中/英
         bar?.setLangIndicator(isChinese) // V67：同步候选栏中/英指示器
-        // V69：中/英改为长按触发，加 toast 明确反馈
+        // V70：中/英为独立键点按触发，toast 明确反馈
         onToast(if (isChinese) "已切换为中文输入" else "已切换为英文输入")
         refresh()
     }
