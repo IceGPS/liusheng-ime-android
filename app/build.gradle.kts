@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId = "com.icegps.voiceime"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 58
         // V2：端侧转写（MNN Qwen3-ASR-0.6B INT8）+ 局域网备用
         versionName = "0.58.0-v58"
