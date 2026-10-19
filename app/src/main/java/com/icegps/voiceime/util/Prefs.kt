@@ -167,4 +167,42 @@ object Prefs {
     fun setPinyinScheme(ctx: Context, v: String) {
         prefs(ctx).edit().putString(KEY_PINYIN_SCHEME, v).apply()
     }
+
+    // ---------- 剪贴板历史（V69） ----------
+
+    private const val KEY_CLIP_ENABLED = "clip_enabled"
+
+    /**
+     * 剪贴板历史总开关：本机记录 + 局域网共享。
+     * 默认关闭（隐私优先，需用户明确开启）；首次配对成功后自动开启。
+     */
+    fun isClipEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_CLIP_ENABLED, false)
+
+    fun setClipEnabled(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_CLIP_ENABLED, v).apply()
+    }
+
+    private const val KEY_CLIP_DEVICE_ID = "clip_device_id"
+
+    /** 本机设备 UUID（局域网同步的设备标识，防回环用），首次生成后不变 */
+    fun getClipDeviceId(ctx: Context): String {
+        val p = prefs(ctx)
+        var id = p.getString(KEY_CLIP_DEVICE_ID, null)
+        if (id.isNullOrEmpty()) {
+            id = java.util.UUID.randomUUID().toString()
+            p.edit().putString(KEY_CLIP_DEVICE_ID, id).apply()
+        }
+        return id
+    }
+
+    private const val KEY_CLIP_PAIRED = "clip_paired_json"
+
+    /** 已配对设备列表（JSON 数组：[{id,name,key,host,port}]） */
+    fun getClipPairedJson(ctx: Context): String =
+        prefs(ctx).getString(KEY_CLIP_PAIRED, "[]") ?: "[]"
+
+    fun setClipPairedJson(ctx: Context, v: String) {
+        prefs(ctx).edit().putString(KEY_CLIP_PAIRED, v).apply()
+    }
 }

@@ -23,6 +23,14 @@ class PinyinInputController(
     private var keyboard: PinyinKeyboardView? = null
     private var bar: CandidateBarView? = null
     private var symbolKeyboard: SymbolKeyboardView? = null
+    private var clipPanel: ClipPanelView? = null
+
+    /** 剪贴板历史变化时，若面板正开着则刷新列表 */
+    private val clipStoreListener: () -> Unit = {
+        if (clipPanel?.visibility == android.view.View.VISIBLE) {
+            clipPanel?.refresh()
+        }
+    }
 
     /**
      * 替换拼音引擎（第二阶段：换成 RIME JNI / 纯 Kotlin 真实引擎实现）。
@@ -82,8 +90,48 @@ class PinyinInputController(
         bar.onOpenSettings = { onOpenSettings?.invoke() }
         bar.onCandidateClick = { selectCandidate(it) }
         bar.onExpandCandidates = { onExpandCandidates?.invoke() ?: expandCandidatePanel() }
-        bar.onLangToggle = { toggleLang() } // V67：中/英移至候选栏右侧
+        bar.onLangToggle = { toggleLang() } // V67：中/英在候选栏右侧；V69：改为长按触发
+        bar.onClipboardClick = { toggleClipPanel() } // V69：点击打开剪贴板历史面板
+        com.icegps.voiceime.service.clip.ClipStore.addListener(clipStoreListener)
         refresh()
+    }
+
+    /** 绑定剪贴板历史面板（由 VoiceImeService 创建并加入布局） */
+    fun attachClipPanel(panel: ClipPanelView) {
+        this.clipPanel = panel
+        panel.onEntryClick = { entry ->
+            // 点选上屏：先把未完成拼音按首选提交，再上屏剪贴板文本
+            commitWithComposingFlushed(entry.text)
+            hideClipPanel()
+        }
+        panel.onClose = { hideClipPanel() }
+    }
+
+    /** 剪贴板面板是否正开着 */
+    fun isClipPanelShowing(): Boolean = clipPanel?.visibility == android.view.View.VISIBLE
+
+    /** 切换剪贴板面板显示/隐藏 */
+    private fun toggleClipPanel() {
+        if (isClipPanelShowing()) hideClipPanel() else showClipPanel()
+    }
+
+    private fun showClipPanel() {
+        val panel = clipPanel ?: return
+        // 未开启功能时显示提示而非空列表
+        panel.featureDisabledHint =
+            !com.icegps.voiceime.util.Prefs.isClipEnabled(panel.context)
+        panel.refresh()
+        keyboard?.visibility = android.view.View.GONE
+        symbolKeyboard?.visibility = android.view.View.GONE
+        panel.visibility = android.view.View.VISIBLE
+    }
+
+    private fun hideClipPanel() {
+        clipPanel?.visibility = android.view.View.GONE
+        // 面板只在拼音模式下可开，关闭后回到字母键盘
+        if (symbolKeyboard?.visibility != android.view.View.VISIBLE) {
+            keyboard?.visibility = android.view.View.VISIBLE
+        }
     }
 
     /** 绑定符号/数字键盘 */
@@ -296,6 +344,8 @@ class PinyinInputController(
         keyboard?.isChineseMode = isChinese
         symbolKeyboard?.isChineseMode = isChinese // V68：符号/数字键盘 。 键跟随中/英
         bar?.setLangIndicator(isChinese) // V67：同步候选栏中/英指示器
+        // V69：中/英改为长按触发，加 toast 明确反馈
+        onToast(if (isChinese) "已切换为中文输入" else "已切换为英文输入")
         refresh()
     }
 

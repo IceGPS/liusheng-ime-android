@@ -42,7 +42,10 @@ class CandidateBarView @JvmOverloads constructor(
     /** 点左上角 🎤：进入留声输入法设置界面 */
     var onOpenSettings: (() -> Unit)? = null
 
-    /** 点右端"中/英"：切换中英文输入 */
+    /** 点右端"📋"：打开剪贴板历史面板（V69：最高频功能占最顺手的位置） */
+    var onClipboardClick: (() -> Unit)? = null
+
+    /** 长按右端"📋"：切换中英文输入（V69：中/英从点击改为长按） */
     var onLangToggle: (() -> Unit)? = null
 
     /** 点候选词：按下标选中上屏 */
@@ -53,7 +56,7 @@ class CandidateBarView @JvmOverloads constructor(
 
     private val candidatesRow: LinearLayout
     private val expandBtn: TextView
-    private val langBtn: TextView
+    private val clipBtn: TextView
 
     /** 拼音小耳朵悬浮气泡 */
     private var earPopup: PopupWindow? = null
@@ -110,20 +113,26 @@ class CandidateBarView @JvmOverloads constructor(
         )
         addView(scroll, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
 
-        // 右：中/英切换（V67：从拼音键盘底行移过来，保持底行统一）
-        langBtn = TextView(context).apply {
-            text = "中"
-            textSize = 16f
+        // 右：剪贴板（V69）：点击打开剪贴板历史面板，长按切换中/英。
+        // 键面保留中/英文字（V67 的指示器传统）：中文"📋中"蓝色，英文"📋英"灰色。
+        clipBtn = TextView(context).apply {
+            text = "📋中"
+            textSize = 15f
             gravity = Gravity.CENTER
             isClickable = true
             isFocusable = false
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(6), dp(8), dp(6), dp(8))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                onClipboardClick?.invoke()
+            }
+            setOnLongClickListener {
+                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                 onLangToggle?.invoke()
+                true
             }
         }
-        addView(langBtn, LayoutParams(dp(48), LayoutParams.MATCH_PARENT))
+        addView(clipBtn, LayoutParams(dp(56), LayoutParams.MATCH_PARENT))
 
         // 右：">" 展开按钮（始终占位，保持栏高稳定）
         expandBtn = TextView(context).apply {
@@ -143,12 +152,13 @@ class CandidateBarView @JvmOverloads constructor(
     }
 
     /**
-     * 设置中/英指示器（V67）：中文模式显示"中"（高亮），英文模式显示"英"。
+     * 设置中/英指示器（V67）：中文模式显示"📋中"（高亮），英文模式显示"📋英"。
+     * V69：键面加上 📋（点击=剪贴板面板），长按切换中/英。
      */
     fun setLangIndicator(isChinese: Boolean) {
-        langBtn.text = if (isChinese) "中" else "英"
+        clipBtn.text = if (isChinese) "📋中" else "📋英"
         // 高亮当前：中文用蓝色，英文用灰色（与拼音键盘原中/英键一致）
-        langBtn.setTextColor(if (isChinese) 0xFF007AFF.toInt() else hintColor)
+        clipBtn.setTextColor(if (isChinese) 0xFF007AFF.toInt() else hintColor)
     }
 
     /**

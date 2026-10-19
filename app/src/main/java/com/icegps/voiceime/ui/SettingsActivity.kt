@@ -18,6 +18,7 @@ import android.app.AlertDialog
 import android.widget.Toast
 import com.icegps.voiceime.service.ModelDownloader
 import com.icegps.voiceime.service.asr.SherpaAsrBackend
+import com.icegps.voiceime.service.clip.ClipSyncManager
 import com.icegps.voiceime.util.Prefs
 
 /**
@@ -40,6 +41,14 @@ class SettingsActivity : Activity() {
     private lateinit var modelUrlEdit: EditText
     private lateinit var hostEdit: EditText
     private lateinit var portEdit: EditText
+    private lateinit var pairedContainer: LinearLayout
+
+    /** 配对列表变化时刷新（例如电脑端主动取消配对） */
+    private val clipSyncListener = object : ClipSyncManager.Listener {
+        override fun onPairedDevicesChanged() {
+            runOnUiThread { if (::pairedContainer.isInitialized) refreshPairedList() }
+        }
+    }
 
     @Volatile private var downloading = false
 
@@ -112,6 +121,37 @@ class SettingsActivity : Activity() {
             toast(if (scheme == "xiaohe") "已切换为小鹤双拼" else "已切换为全拼")
         }
         root.addView(schemeGroup)
+
+        // ---------- 剪贴板历史（V69） ----------
+        root.addView(sectionTitle("剪贴板历史"))
+        val clipSwitch = Switch(this).apply {
+            text = "剪贴板历史（本机记录 + 局域网共享）"
+            isChecked = Prefs.isClipEnabled(this@SettingsActivity)
+            setOnCheckedChangeListener { _, checked ->
+                Prefs.setClipEnabled(this@SettingsActivity, checked)
+                ClipSyncManager.init(this@SettingsActivity)
+                toast(if (checked) "剪贴板历史已开启" else "剪贴板历史已关闭")
+            }
+        }
+        root.addView(clipSwitch)
+        root.addView(label("仅保存在本机；局域网共享需与电脑配对确认，全程 AES 加密，不经过互联网。"))
+
+        val clipStatus = label("")
+        val discoverBtn = Button(this).apply {
+            text = "🔍 搜索可配对的电脑"
+            setOnClickListener { discoverClipPcs(clipStatus, this) }
+        }
+        root.addView(discoverBtn)
+        root.addView(clipStatus)
+
+        root.addView(label("已配对的电脑："))
+        pairedContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        root.addView(pairedContainer)
+        ClipSyncManager.init(this)
+        ClipSyncManager.addListener(clipSyncListener)
+        refreshPairedList()
 
         // ---------- 端侧模型 ----------
         root.addView(sectionTitle("端侧模型（SenseVoice-Small INT8，约 230MB）"))
@@ -217,6 +257,98 @@ class SettingsActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (!downloading) refreshModelStatus()
+        if (::pairedContainer.isInitialized) refreshPairedList()
+    }
+
+    override fun onDestroy() {
+        try { ClipSyncManager.removeListener(clipSyncListener) } catch (_: Exception) {}
+        super.onDestroy()
+    }
+
+    // ---------- 剪贴板历史（V69） ----------
+
+    /** 搜索局域网内支持剪贴板的电脑（mDNS clip=1），列出未配对的可发起配对 */
+    private fun discoverClipPcs(status: TextView, btn: Button) {
+        btn.isEnabled = false
+        btn.text = "搜索中…"
+        status.text = "正在搜索局域网内支持剪贴板的电脑…"
+        ClipSyncManager.init(this)
+        val pairedIds = ClipSyncManager.getPaired().map { it.id }.toSet()
+        ClipSyncManager.discover(10000) { pcs ->
+            // 10 秒内用户若已退出设置页，不再弹窗
+            if (isFinishing || isDestroyed) return@discover
+            btn.isEnabled = true
+            btn.text = "🔍 搜索可配对的电脑"
+            val fresh = pcs.filter { it.deviceId !in pairedIds }
+            if (fresh.isEmpty()) {
+                status.text = "未发现可配对的电脑（电脑端需先开启剪贴板共享并发布 mDNS）"
+                return@discover
+            }
+            val names = fresh.map { "${it.name}（${it.host}）" }.toTypedArray()
+            AlertDialog.Builder(this)
+                .setTitle("选择要配对的电脑")
+                .setItems(names) { _, which -> pairClipPc(fresh[which], status) }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+    }
+
+    /** 发起配对：等用户在电脑端弹窗点同意（7.2） */
+    private fun pairClipPc(pc: ClipSyncManager.DiscoveredPc, status: TextView) {
+        val progress = AlertDialog.Builder(this)
+            .setTitle("等待电脑确认")
+            .setMessage("请在电脑「${pc.name}」的配对请求弹窗中点击同意…")
+            .setNegativeButton("取消", null)
+            .show()
+        ClipSyncManager.pair(pc) { ok, msg ->
+            try { progress.dismiss() } catch (_: Exception) {}
+            if (isFinishing || isDestroyed) return@pair
+            status.text = msg
+            toast(msg)
+            refreshPairedList()
+        }
+    }
+
+    /** 重建已配对电脑列表 */
+    private fun refreshPairedList() {
+        pairedContainer.removeAllViews()
+        val paired = ClipSyncManager.getPaired()
+        if (paired.isEmpty()) {
+            pairedContainer.addView(label("（无）"))
+            return
+        }
+        paired.forEach { dev ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            val nameTv = TextView(this).apply {
+                text = "${dev.name}（${dev.host}）"
+                textSize = 14f
+                setTextColor(Color.DKGRAY)
+            }
+            row.addView(
+                nameTv,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            val unpairBtn = Button(this).apply {
+                text = "取消配对"
+                setOnClickListener {
+                    AlertDialog.Builder(this@SettingsActivity)
+                        .setTitle("取消配对？")
+                        .setMessage("不再与「${dev.name}」共享剪贴板。")
+                        .setPositiveButton("取消配对") { _, _ ->
+                            ClipSyncManager.unpair(dev.id)
+                            toast("已取消配对")
+                            refreshPairedList()
+                        }
+                        .setNegativeButton("保留", null)
+                        .show()
+                }
+            }
+            row.addView(unpairBtn)
+            pairedContainer.addView(row)
+        }
     }
 
     // ---------- 引擎选择 ----------

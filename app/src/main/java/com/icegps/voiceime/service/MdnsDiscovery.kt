@@ -23,6 +23,12 @@ class MdnsDiscovery(private val ctx: Context) {
         val host: String,
         val port: Int,
         val model: String = "",
+        /** TXT clip=1：该 PC 支持剪贴板共享（V69） */
+        val clipSupported: Boolean = false,
+        /** TXT id：PC 的设备 UUID（V69） */
+        val deviceId: String = "",
+        /** TXT name：PC 的设备名（V69） */
+        val deviceName: String = "",
     )
 
     private var nsdManager: NsdManager? = null
@@ -50,11 +56,15 @@ class MdnsDiscovery(private val ctx: Context) {
                     }
                     override fun onServiceResolved(si: NsdServiceInfo) {
                         val host = si.host?.hostAddress ?: return
+                        val attrs = si.attributes
                         val server = Server(
                             name = si.serviceName,
                             host = host,
                             port = si.port,
-                            model = si.attributes["model"]?.let { String(it) } ?: "",
+                            model = attrs["model"]?.let { String(it) } ?: "",
+                            clipSupported = attrs["clip"]?.let { String(it) } == "1",
+                            deviceId = attrs["id"]?.let { String(it) } ?: "",
+                            deviceName = attrs["name"]?.let { String(it) } ?: "",
                         )
                         foundServers[si.serviceName] = server
                         Log.i(TAG, "解析成功: $server")

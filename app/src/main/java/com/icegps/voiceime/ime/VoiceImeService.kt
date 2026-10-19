@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Toast
 import com.icegps.voiceime.ime.pinyin.CandidateBarView
+import com.icegps.voiceime.ime.pinyin.ClipPanelView
 import com.icegps.voiceime.ime.pinyin.PinyinDictionary
 import com.icegps.voiceime.ime.pinyin.PinyinInputController
 import com.icegps.voiceime.ime.pinyin.ShuangpinMapper
@@ -22,6 +23,8 @@ import com.icegps.voiceime.service.TranscriptLogger
 import com.icegps.voiceime.service.asr.AsrBackend
 import com.icegps.voiceime.service.asr.LanAsrBackend
 import com.icegps.voiceime.service.asr.SherpaAsrBackend
+import com.icegps.voiceime.service.clip.ClipStore
+import com.icegps.voiceime.service.clip.ClipSyncManager
 import com.icegps.voiceime.util.Prefs
 import kotlin.concurrent.thread
 import kotlin.math.abs
@@ -44,6 +47,15 @@ class VoiceImeService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
+        // V69：剪贴板历史 —— 初始化存储与局域网同步，注册系统剪贴板监听
+        ClipStore.init(this)
+        ClipSyncManager.init(this)
+        try {
+            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as? android.content.ClipboardManager
+            cm?.addPrimaryClipChangedListener(clipChangedListener)
+        } catch (_: Exception) {
+        }
         // 启动时积极加载所有重组件（不用懒加载）：后台线程按优先级顺序预热，
         // 强引用占住内存，避免 GC 释放后再次懒加载卡顿。
         // 顺序：拼音词典（27MB）→ 双拼映射表 → 语音模型（~230MB，局域网模式跳过）。
@@ -527,11 +539,18 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 顺序：候选栏、语音模式、拼音键盘、符号/数字键盘
+        // 顺序：候选栏、语音模式、拼音键盘、符号/数字键盘、剪贴板面板
         root.addView(candidateBar)
         root.addView(voiceBox)
         root.addView(pinyinKeyboard)
         root.addView(symbolKeyboard)
+
+        // 剪贴板历史面板（V69）：打开时替换整个拼音键盘区域
+        val clipPanel = ClipPanelView(ctx).apply {
+            visibility = View.GONE
+        }
+        root.addView(clipPanel)
+        pinyinController?.attachClipPanel(clipPanel)
 
         // 恢复上次的键盘模式
         if (Prefs.getKbMode(ctx) == Prefs.KB_PINYIN) {
@@ -742,6 +761,39 @@ class VoiceImeService : InputMethodService() {
         backspaceRepeating = false
         backspaceHandler.removeCallbacks(backspaceRepeat)
         try { sherpaBackend?.release() } catch (_: Exception) {}
+        // V69：注销剪贴板监听，关闭局域网同步
+        try {
+            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as? android.content.ClipboardManager
+            cm?.removePrimaryClipChangedListener(clipChangedListener)
+        } catch (_: Exception) {
+        }
+        try { ClipSyncManager.shutdown() } catch (_: Exception) {}
         super.onDestroy()
     }
+
+    /**
+     * 系统剪贴板变化监听（V69）：输入法运行期间，用户在任意应用复制文本
+     * → 记入本地历史 → 推送给已配对的 PC。
+     * 总开关关闭时不记录（隐私优先）。收到的 PC 内容不写系统剪贴板，
+     * 故此处不会形成回环。
+     */
+    private val clipChangedListener =
+        android.content.ClipboardManager.OnPrimaryClipChangedListener {
+            if (!Prefs.isClipEnabled(this)) return@OnPrimaryClipChangedListener
+            try {
+                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                    as? android.content.ClipboardManager ?: return@OnPrimaryClipChangedListener
+                val desc = cm.primaryClipDescription
+                val isText = desc?.hasMimeType(android.content.ClipDescription.MIMETYPE_TEXT_PLAIN) == true ||
+                    desc?.hasMimeType(android.content.ClipDescription.MIMETYPE_TEXT_HTML) == true
+                if (!isText) return@OnPrimaryClipChangedListener
+                val text = cm.primaryClip?.getItemAt(0)
+                    ?.coerceToText(this)?.toString()?.trim()
+                if (text.isNullOrEmpty()) return@OnPrimaryClipChangedListener
+                ClipStore.add(text, ClipStore.SOURCE_LOCAL)
+                ClipSyncManager.pushToPaired(text)
+            } catch (_: Exception) {
+            }
+        }
 }
