@@ -363,6 +363,7 @@ invalidate()
 }
 Action.GOTO_DIGIT -> listener?.onGotoDigit()
 Action.GOTO_SYMBOL -> listener?.onGotoSymbol()
+else -> { /* 已处理 */ }
 }
 }
 }
