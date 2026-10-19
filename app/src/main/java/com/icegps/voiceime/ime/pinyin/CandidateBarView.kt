@@ -163,7 +163,9 @@ class CandidateBarView @JvmOverloads constructor(
                 gravity = Gravity.CENTER
                 background = GradientDrawable().apply {
                     setColor(earBgColor)
-                    cornerRadius = dp(8).toFloat()
+                    // 上两角圆角、下两角直角（小耳朵/提示签形状）
+                    val r = dp(8).toFloat()
+                    cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
                 }
                 setPadding(dp(10), dp(5), dp(10), dp(5))
                 isFocusable = false
@@ -217,7 +219,9 @@ class CandidateBarView @JvmOverloads constructor(
                 setTextColor(textColor)
                 gravity = Gravity.CENTER
                 minWidth = dp(48)
-                setPadding(dp(14), dp(12), dp(14), dp(12))
+                // 纵向内边距 4dp：52dp 栏高内容纳得下（不裁字），
+                // 且栏内上下留白比原来减半
+                setPadding(dp(14), dp(4), dp(14), dp(4))
                 isClickable = true
                 isFocusable = false
                 setOnClickListener {

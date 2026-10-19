@@ -13,6 +13,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.Toast
 import com.icegps.voiceime.ime.pinyin.CandidateBarView
+import com.icegps.voiceime.ime.pinyin.PinyinDictionary
 import com.icegps.voiceime.ime.pinyin.PinyinInputController
 import com.icegps.voiceime.ime.pinyin.EngineAdapter
 import com.icegps.voiceime.ime.pinyin.PinyinKeyboardView
@@ -38,6 +39,20 @@ import kotlin.math.abs
  * 转写复用现有后端（局域网 / 端侧 MNN），与悬浮球同一套逻辑。
  */
 class VoiceImeService : InputMethodService() {
+
+    override fun onCreate() {
+        super.onCreate()
+        // 预热拼音词典（27MB 二进制，懒加载要 1-2 秒）：
+        // 输入法启动时后台线程提前载入，单例加载完后拼音引擎直接复用，
+        // 用户第一次按字母键不再等待。失败也不影响：届时仍会懒加载。
+        Thread {
+            try {
+                PinyinDictionary.get(this)
+            } catch (e: Exception) {
+                // 忽略
+            }
+        }.apply { isDaemon = true }.start()
+    }
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private val recorder = Recorder()
