@@ -143,6 +143,11 @@ class PinyinInputController(
             commitWithComposingFlushed("，")
             return
         }
+        if (ch in 'A'..'Z') {
+            // 中文模式 + 大写锁定：和电脑中文输入法一致，大写字母直接上屏，不走拼音
+            commitWithComposingFlushed(ch.toString())
+            return
+        }
         engine.processKey(ch.lowercaseChar())
         refresh()
     }

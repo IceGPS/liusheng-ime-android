@@ -11,9 +11,9 @@ android {
         applicationId = "com.icegps.voiceime"
         minSdk = 26
         targetSdk = 34
-        versionCode = 51
+        versionCode = 52
         // V2：端侧转写（MNN Qwen3-ASR-0.6B INT8）+ 局域网备用
-        versionName = "0.51.0-v51"
+        versionName = "0.52.0-v52"
 
         // MNN native bridge：只在有 NDK 时编译（arm64-v8a）。
         // 无 NDK 的构建（如 Linux CI）跳过 native，APK 仍可编译安装，
