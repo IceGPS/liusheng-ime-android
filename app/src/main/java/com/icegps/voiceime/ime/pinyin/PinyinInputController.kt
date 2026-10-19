@@ -89,6 +89,7 @@ class PinyinInputController(
         }
         bar.onOpenSettings = { onOpenSettings?.invoke() }
         bar.onCandidateClick = { selectCandidate(it) }
+        bar.onCandidateLongClick = { word -> onCandidateLongPress(word) }
         bar.onExpandCandidates = { onExpandCandidates?.invoke() ?: expandCandidatePanel() }
         bar.onLangToggle = { toggleLang() } // V70：中/英为候选栏右端独立键，点按切换
         bar.onClipboardClick = { toggleClipPanel() } // V69：点击打开剪贴板历史面板
@@ -181,11 +182,11 @@ class PinyinInputController(
         refresh()
     }
 
-    /** 把未完成拼音按首选上屏（不丢字），供模式切换前调用 */
+    /** 把未完成拼音按首选上屏（不丢字），供模式切换前调用；非用户主动选择，不计入自学习 */
     private fun flushComposingAsFirstCandidate() {
         val composing = engine.getComposingText()
         if (composing.isNotEmpty()) {
-            val first = engine.selectCandidate(0) ?: composing
+            val first = engine.selectCandidate(0, learn = false) ?: composing
             ic()?.commitText(first, 1)
             engine.clear()
         }
@@ -276,11 +277,11 @@ class PinyinInputController(
         }
     }
 
-    /** 先把未完成的拼音串按首选上屏，再提交给定文本 */
+    /** 先把未完成的拼音串按首选上屏，再提交给定文本；首选提交非用户主动选择，不计入自学习 */
     private fun commitWithComposingFlushed(text: String) {
         val composing = engine.getComposingText()
         if (composing.isNotEmpty()) {
-            val first = engine.selectCandidate(0) ?: composing
+            val first = engine.selectCandidate(0, learn = false) ?: composing
             ic()?.commitText(first, 1)
         }
         ic()?.commitText(text, 1)
@@ -289,8 +290,9 @@ class PinyinInputController(
 
     private fun handleSpace() {
         if (engine.getComposingText().isNotEmpty()) {
-            selectCandidate(0) // 标准行为：空格选首选
+            selectCandidate(0) // 标准行为：空格选首选（用户主动，计入自学习）
         } else {
+            engine.breakWordChain() // 直接上屏空格，打断造词链
             ic()?.commitText(" ", 1)
         }
     }
@@ -308,19 +310,35 @@ class PinyinInputController(
         val raw = engine.rawInput()
         if (raw.isNotEmpty()) {
             // 回车直接上屏用户实际键入的原始字母（原封不动）：
-            // 双拼模式下不展开成全拼（如 "vk" 不变成 "zhang"），不加 ' 分隔符
+            // 双拼模式下不展开成全拼（如 "vk" 不变成 "zhang"），不加 ' 分隔符；
+            // 不计入自学习
             ic()?.commitText(raw, 1)
             engine.clear()
             refresh()
         } else {
+            engine.breakWordChain() // 直接上屏换行，打断造词链
             ic()?.commitText("\n", 1)
             refresh()
         }
     }
 
+    /** 用户主动点选候选词（候选栏点按 / 空格选首选 / 浮层点选），计入自学习 */
     private fun selectCandidate(index: Int) {
-        val text = engine.selectCandidate(index) ?: return
+        val text = engine.selectCandidate(index, learn = true) ?: return
         ic()?.commitText(text, 1)
+        refresh()
+    }
+
+    /**
+     * 候选栏长按候选词：仅个人词典来源的词提供删除。
+     * 静态词库的词长按无操作。删除后该词不再参与置顶；
+     * 之后再次主动选择可重新学习（v1 无黑名单）。
+     */
+    private fun onCandidateLongPress(word: String) {
+        val adapter = engine as? EngineAdapter ?: return
+        if (!adapter.isUserWord(word)) return
+        adapter.deleteUserWord(word)
+        onToast("已从个人词典删除“$word”")
         refresh()
     }
 

@@ -50,13 +50,24 @@ class EngineAdapter(
         return allCandidates.map { it.word }
     }
 
-    override fun selectCandidate(index: Int): String? {
+    override fun selectCandidate(index: Int, learn: Boolean): String? {
         // 用全量列表做下标映射，兼容浮层面板的绝对下标（前9个顺序与 lastCandidates 一致）
         val c = allCandidates.getOrNull(index) ?: return null
-        val word = engine.selectCandidate(c)
+        val word = engine.selectCandidate(c, learn)
         refreshCandidates()
         return word
     }
+
+    /** 该词是否在个人词典中（候选栏长按删除菜单用） */
+    fun isUserWord(word: String): Boolean = engine.isUserWord(word)
+
+    /** 从个人词典删除该词（所有拼音键），刷新候选 */
+    fun deleteUserWord(word: String) {
+        engine.deleteUserWord(word)
+        refreshCandidates()
+    }
+
+    override fun breakWordChain() = engine.breakWordChain()
 
     override fun setMode(mode: PinyinMode) {
         engine.mode = when (mode) {

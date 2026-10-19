@@ -51,6 +51,9 @@ class CandidateBarView @JvmOverloads constructor(
     /** 点候选词：按下标选中上屏 */
     var onCandidateClick: ((index: Int) -> Unit)? = null
 
+    /** 长按候选词：个人词典的词可删除（V72，静态词库的词长按无操作） */
+    var onCandidateLongClick: ((word: String) -> Unit)? = null
+
     /** 点右端 ">"：展开浮层候选面板 */
     var onExpandCandidates: (() -> Unit)? = null
 
@@ -277,6 +280,11 @@ class CandidateBarView @JvmOverloads constructor(
                 setOnClickListener {
                     performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     onCandidateClick?.invoke(index)
+                }
+                setOnLongClickListener {
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    onCandidateLongClick?.invoke(word)
+                    true
                 }
             }
             candidatesRow.addView(tv)

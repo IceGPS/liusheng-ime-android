@@ -33,9 +33,14 @@ interface PinyinEngine {
 
     /**
      * 选中第 index 个候选词。
+     * @param learn 是否计入用户词典自学习（用户主动点选=true；
+     *   内部自动上屏如切键盘时的首选提交=false；回车上屏原始字母不走这里）
      * @return 上屏文本；无候选时返回 null。选中后引擎内部清空拼音串。
      */
-    fun selectCandidate(index: Int): String?
+    fun selectCandidate(index: Int, learn: Boolean = true): String?
+
+    /** 打断造词链（连续单字点选序列），如直接上屏空格/回车等非选词提交时调用 */
+    fun breakWordChain()
 
     /** 切换拼音方案：全拼 / 小鹤双拼 */
     fun setMode(mode: PinyinMode)

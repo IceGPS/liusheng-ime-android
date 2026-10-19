@@ -24,6 +24,25 @@ class KotlinPinyinEngine(
     /** 词典（懒加载） */
     private val dict: PinyinDictionary by lazy { PinyinDictionary.get(context) }
 
+    /** 用户词典（自学习，V72；单例，init 幂等） */
+    init {
+        UserDict.init(context)
+    }
+
+    /** 造词链：连续单字点选 (词, 拼音)，最多 6 个 */
+    private val recentSingles = ArrayDeque<Pair<String, String>>()
+
+    /** 该词是否在个人词典中（候选栏长按删除菜单用） */
+    fun isUserWord(word: String): Boolean = UserDict.contains(word)
+
+    /** 从个人词典删除该词（所有拼音键） */
+    fun deleteUserWord(word: String) = UserDict.deleteByWord(word)
+
+    /** 打断造词链（如直接上屏空格/回车等非选词提交） */
+    fun breakWordChain() {
+        recentSingles.clear()
+    }
+
     fun processKey(ch: Char) {
         buffer.append(ch)
     }
@@ -31,11 +50,13 @@ class KotlinPinyinEngine(
     fun deleteLast(): Boolean {
         if (buffer.isEmpty()) return false
         buffer.deleteCharAt(buffer.length - 1)
+        recentSingles.clear() // 删除打断造词链
         return true
     }
 
     fun clear() {
         buffer.clear()
+        recentSingles.clear()
     }
 
     fun isEmpty(): Boolean = buffer.isEmpty()
@@ -146,6 +167,12 @@ class KotlinPinyinEngine(
      */
     fun getCandidates(maxCount: Int = 9): List<Candidate> {
         if (buffer.isEmpty()) return emptyList()
+
+        // 0. 个人词典置顶（V72）：整串输入的规范拼音键精确命中用户词典时，
+        //    按用户频次置于静态词库之前（freq>=2 或造词来源才参与，见 UserDict）
+        val userTop = userRankCandidates()
+        val userTopWords = userTop.map { it.word }.toSet()
+
         val syllableOptions = parseSyllables()
 
         val result = LinkedHashMap<String, Candidate>() // 去重保序
@@ -195,11 +222,52 @@ class KotlinPinyinEngine(
             }
         }
 
-        // 排序：消耗音节数多者优先，同级按词频
-        return result.values
+        // 排序：消耗音节数多者优先，同级按词频；
+        // 个人词典命中置于最前（已去重静态重复项）
+        val staticSorted = result.values
             .sortedWith(compareByDescending<Candidate> { it.consumedSyllables }
                 .thenByDescending { it.freq })
-            .take(maxCount)
+        if (userTop.isEmpty()) return staticSorted.take(maxCount)
+        return (userTop + staticSorted.filter { it.word !in userTopWords }).take(maxCount)
+    }
+
+    /**
+     * 个人词典置顶候选：当前整串输入的规范拼音键精确命中用户词典。
+     * 选中的 Candidate 消耗整串音节数（选中即消费全部输入）。
+     */
+    private fun userRankCandidates(): List<Candidate> {
+        val (key, sylCount) = fullPinyinKey() ?: return emptyList()
+        if (key.isEmpty() || sylCount <= 0) return emptyList()
+        return UserDict.lookupRanked(key).map { uw ->
+            Candidate(uw.word, Int.MAX_VALUE, sylCount)
+        }
+    }
+
+    /**
+     * 当前整串输入的规范拼音键 + 音节数（跨全拼/双拼归一）。
+     * 无法解析（如双拼落单键）时返回 null。
+     */
+    private fun fullPinyinKey(): Pair<String, Int>? {
+        if (buffer.isEmpty()) return null
+        return when (mode) {
+            Mode.QUANPIN -> {
+                val segs = PinyinSyllables.segment(buffer.toString()).firstOrNull()
+                    ?: return null
+                segs.joinToString("") to segs.size
+            }
+            Mode.XIAOHE -> {
+                if (buffer.length % 2 != 0) return null
+                val syls = mutableListOf<String>()
+                var i = 0
+                while (i < buffer.length) {
+                    val s = ShuangpinMapper.keysToSyllables(buffer.substring(i, i + 2))
+                    if (s.isEmpty()) return null
+                    syls.add(s[0])
+                    i += 2
+                }
+                syls.joinToString("") to syls.size
+            }
+        }
     }
 
     /**
@@ -270,29 +338,67 @@ class KotlinPinyinEngine(
 
     /**
      * 选中候选词：返回上屏文本，并从 buffer 中消费对应音节。
+     *
+     * @param learn 是否计入用户词典自学习（用户主动点选=true；
+     *   内部自动上屏如切键盘时的首选提交=false；回车/语音不走这里）
      */
-    fun selectCandidate(c: Candidate): String {
+    fun selectCandidate(c: Candidate, learn: Boolean = true): String {
         if (c.consumeAll) {
-            // 首字母兜底候选：整个输入缓冲一次消费完
+            // 首字母兜底候选：整个输入缓冲一次消费完；不学习（输入不完整）
             buffer.clear()
+            recentSingles.clear()
             return c.word
         }
-        when (mode) {
+        // 本次消费的规范拼音键（学习用），与排序融合的 fullPinyinKey 同源
+        val consumedKey: String = when (mode) {
             Mode.QUANPIN -> {
-                // 计算消耗的原始按键数：前 consumedSyllables 个音节的总字母数
                 val segs = PinyinSyllables.segment(buffer.toString()).firstOrNull()
-                    ?: return c.word
+                    ?: run {
+                        recentSingles.clear()
+                        return c.word
+                    }
+                val n = minOf(c.consumedSyllables, segs.size)
                 var consumed = 0
-                for (i in 0 until minOf(c.consumedSyllables, segs.size)) {
-                    consumed += segs[i].length
-                }
+                for (i in 0 until n) consumed += segs[i].length
+                val key = segs.take(n).joinToString("")
                 buffer.delete(0, consumed)
+                key
             }
             Mode.XIAOHE -> {
-                // 双拼每音节 2 键
+                val n = minOf(c.consumedSyllables, buffer.length / 2)
+                val sb = StringBuilder()
+                var ok = true
+                for (i in 0 until n) {
+                    val syls = ShuangpinMapper.keysToSyllables(buffer.substring(i * 2, i * 2 + 2))
+                    if (syls.isEmpty()) {
+                        ok = false
+                        break
+                    }
+                    sb.append(syls[0])
+                }
                 val toDelete = minOf(c.consumedSyllables * 2, buffer.length)
                 buffer.delete(0, toDelete)
+                if (ok) sb.toString() else ""
             }
+        }
+        if (learn && c.word.isNotEmpty() && consumedKey.isNotEmpty()) {
+            // 1. 选词记忆
+            UserDict.learn(consumedKey, c.word, UserDict.Source.TAP)
+            // 2. 造词：连续 2–6 个单字点选（单字+单音节），把字和拼音连起来学
+            if (c.word.length == 1 && c.consumedSyllables == 1) {
+                recentSingles.addLast(c.word to consumedKey)
+                if (recentSingles.size > 6) recentSingles.removeFirst()
+                if (recentSingles.size >= 2) {
+                    val w = recentSingles.joinToString("") { it.first }
+                    val p = recentSingles.joinToString("") { it.second }
+                    UserDict.learn(p, w, UserDict.Source.COMPOSE)
+                }
+            } else {
+                recentSingles.clear()
+            }
+        } else {
+            // 非用户主动选择也打断造词链
+            recentSingles.clear()
         }
         return c.word
     }

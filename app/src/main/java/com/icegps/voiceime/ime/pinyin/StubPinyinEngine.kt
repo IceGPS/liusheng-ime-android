@@ -41,11 +41,13 @@ class StubPinyinEngine : PinyinEngine {
         return (DEMO_WORDS[firstSyllable] ?: listOf(firstSyllable)).take(6)
     }
 
-    override fun selectCandidate(index: Int): String? {
+    override fun selectCandidate(index: Int, learn: Boolean): String? {
         val word = getCandidates().getOrNull(index) ?: return null
         sb.clear()
         return word
     }
+
+    override fun breakWordChain() {}
 
     override fun setMode(mode: PinyinMode) {
         this.mode = mode
