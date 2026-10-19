@@ -7,12 +7,15 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.os.Environment
 import android.util.Log
+import com.icegps.voiceime.util.Prefs
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
+import java.util.UUID
 import org.json.JSONObject
 
 /**
@@ -22,9 +25,14 @@ import org.json.JSONObject
  *   /sdcard/VoiceIME/recordings/2026/10/2026-10-13/153022.m4a
  *   /sdcard/VoiceIME/logs/2026/10/2026-10-13.jsonl
  *
- * JSONL 每行：
- *   {"ts":"2026-10-13T15:30:22","audio":"recordings/2026/10/2026-10-13/153022.m4a",
+ * JSONL schema v2（V71 起）：
+ *   {"v":2,"uuid":"...","device_id":"...","ts":"2026-10-20T00:35:00+08:00",
+ *    "status":"ok","audio":"recordings/2026/10/2026-10-20/003500.m4a",
  *    "text":"识别结果","engine":"ondevice","dur_ms":3200}
+ *   status: ok=识别出文本 / empty=无语音或空结果 / error=失败（此时有 error 字段说明原因）
+ *
+ * 读兼容：v1 记录（缺 v/uuid/device_id/status，ts 无时区）仍可读取，
+ * 缺失字段按空/未知处理；v2 保留 v1 全部字段名与语义，只做加法。
  *
  * AAC 编码：Android MediaCodec（系统原生），iPhone AVFoundation 也支持，通用。
  */
@@ -48,43 +56,59 @@ object TranscriptLogger {
     }
 
     /**
-     * 保存一次转写：写 AAC + append JSONL。
+     * 保存一次转写：写 AAC + append JSONL（schema v2）。
+     * 记录**所有**识别尝试（成功/空结果/失败），不再只存成功非空。
      * 文件名规则（对标 CapsWriter）：(20261013-153022)文本前15字.m4a
-     * @param pcm 16kHz 16-bit mono PCM
-     * @param text 识别结果
-     * @param engine "ondevice" 或 "lan"
+     * @param pcm 16kHz 16-bit mono PCM（为空时不写音频文件，audio 字段为空字符串）
+     * @param text 识别结果（empty/error 时可为空）
+     * @param engine "ondevice" / "lan" / "unknown"（录音失败时未知）
      * @param durMs 录音时长毫秒
+     * @param status "ok" | "empty" | "error"
+     * @param error status=error 时的失败原因，可空
      */
-    fun log(ctx: Context, pcm: ShortArray, text: String, engine: String, durMs: Long) {
+    fun log(ctx: Context, pcm: ShortArray, text: String, engine: String, durMs: Long,
+            status: String = "ok", error: String? = null) {
         try {
             val now = Date()
             val dp = datePath(now)
             val timeStr = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(now)
 
-            // 文件名：(时间戳)文本前15字，非法字符替换为空格
-            val textClean = text.take(15).replace(Regex("[\\\\/:\"*?<>|]"), " ").trim()
-            val fileName = "($timeStr)$textClean.m4a"
+            // 1. 保存 AAC (M4A)；无 PCM 时跳过
+            var audioRelPath = ""
+            if (pcm.isNotEmpty()) {
+                // 文件名：(时间戳)文本前15字，非法字符替换为空格
+                val textClean = text.take(15).replace(Regex("[\\\\/:\"*?<>|]"), " ").trim()
+                val fileName = if (textClean.isEmpty()) "($timeStr).m4a"
+                               else "($timeStr)$textClean.m4a"
+                val recDir = File(baseDir(), "recordings/$dp").apply { mkdirs() }
+                val aacFile = File(recDir, fileName)
+                writeAac(aacFile, pcm)
+                audioRelPath = "recordings/$dp/$fileName"
+            }
 
-            // 1. 保存 AAC (M4A)
-            val recDir = File(baseDir(), "recordings/$dp").apply { mkdirs() }
-            val aacFile = File(recDir, fileName)
-            writeAac(aacFile, pcm)
-
-            // 2. Append JSONL
+            // 2. Append JSONL（v2：ts 带时区）
             val logDir = File(baseDir(), "logs/$dp").apply { mkdirs() }
             val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)
             val jsonlFile = File(logDir, "$dateStr.jsonl")
+            val tsFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
+                timeZone = TimeZone.getDefault()
+            }
             val entry = JSONObject().apply {
-                put("ts", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(now))
-                put("audio", "recordings/$dp/$fileName")
+                put("v", 2)
+                put("uuid", UUID.randomUUID().toString())
+                put("device_id", Prefs.getDeviceId(ctx))
+                put("ts", tsFmt.format(now))
+                put("status", status)
+                put("audio", audioRelPath)
                 put("text", text)
                 put("engine", engine)
                 put("dur_ms", durMs)
+                if (error != null) put("error", error)
             }
             FileOutputStream(jsonlFile, true).use { out ->
                 out.write((entry.toString() + "\n").toByteArray(Charsets.UTF_8))
             }
-            Log.i(TAG, "已保存转写记录: ${jsonlFile.name} + ${aacFile.name}")
+            Log.i(TAG, "已保存转写记录[$status]: ${jsonlFile.name}")
         } catch (e: Exception) {
             Log.w(TAG, "保存转写记录失败", e)
         }

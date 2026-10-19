@@ -695,11 +695,13 @@ class VoiceImeService : InputMethodService() {
             voiceBtn?.setBackgroundColor(voiceBtnOrigBgColor)
         }
         val pcm = recorder.stopAndGetPcm()
+        val durMs = System.currentTimeMillis() - recordStartMs
         if (pcm.isEmpty()) {
             toast("录音太短")
+            // 归档：空录音也记一条（无音频），后台写避免主线程 IO
+            thread { TranscriptLogger.log(this, pcm, "", "unknown", durMs, "empty", "录音太短") }
             return
         }
-        val durMs = System.currentTimeMillis() - recordStartMs
         val backend = pickBackend() ?: return
         // 判断引擎类型（用于日志）
         val engineName = when (backend) {
@@ -711,9 +713,11 @@ class VoiceImeService : InputMethodService() {
             try {
                 val result = backend.transcribe(pcm)
                 val text = result.text.trim()
-                // 保存语音 + 转写记录（供 Syncthing 同步到 PC）
+                // 保存语音 + 转写记录（供 Syncthing 同步到 PC）；空结果也归档
                 if (text.isNotEmpty()) {
-                    TranscriptLogger.log(this, pcm, text, engineName, durMs)
+                    TranscriptLogger.log(this, pcm, text, engineName, durMs, "ok")
+                } else {
+                    TranscriptLogger.log(this, pcm, "", engineName, durMs, "empty", "识别结果为空")
                 }
                 uiHandler.post {
                     if (text.isNotEmpty()) {
@@ -724,6 +728,9 @@ class VoiceImeService : InputMethodService() {
                     }
                 }
             } catch (e: Exception) {
+                // 归档失败的尝试
+                TranscriptLogger.log(this, pcm, "", engineName, durMs, "error",
+                    e.message ?: "转写异常")
                 uiHandler.post { toast("转写失败：${e.message}") }
             }
         }

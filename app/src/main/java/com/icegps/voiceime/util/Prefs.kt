@@ -129,14 +129,6 @@ object Prefs {
         prefs(ctx).edit().putInt(KEY_VAD_SILENCE_MS, v.coerceIn(500, 5000)).apply()
     }
 
-    /** 数字/标点区是否展开，默认关闭 */
-    fun isNumPadExpanded(ctx: Context): Boolean =
-        prefs(ctx).getBoolean("numpad_expanded", false)
-
-    fun setNumPadExpanded(ctx: Context, v: Boolean) {
-        prefs(ctx).edit().putBoolean("numpad_expanded", v).apply()
-    }
-
     // ---------- 拼音键盘（V32） ----------
 
     private const val KEY_KB_MODE = "kb_mode"
@@ -195,6 +187,12 @@ object Prefs {
         }
         return id
     }
+
+    /**
+     * 本机稳定设备 ID（转写归档 JSONL 的 device_id；与剪贴板同步共用同一 UUID，
+     * 多设备合并时做 per-device 区分），首次生成后不变。
+     */
+    fun getDeviceId(ctx: Context): String = getClipDeviceId(ctx)
 
     private const val KEY_CLIP_PAIRED = "clip_paired_json"
 
