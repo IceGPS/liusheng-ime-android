@@ -236,10 +236,11 @@ jobs:
 
           "$JAVA_HOME/bin/java" -jar "$BUNDLETOOL_JAR" build-bundle \
             --modules="$BUILD_DIR/base.zip" --output="$BUILD_DIR/app.aab"
-          "$JAVA_HOME/bin/java" -jar "$BT/lib/apksigner.jar" sign \
-            --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android \
-            --out "$BUILD_DIR/signed.aab" "$BUILD_DIR/app.aab"
-          "$JAVA_HOME/bin/java" -jar "$BT/lib/apksigner.jar" verify "$BUILD_DIR/signed.aab"
+          # AAB 不是 APK 结构，apksigner 认不出，改用 jarsigner（JAR 签名）签名
+          KEY_ALIAS=$("$JAVA_HOME/bin/keytool" -list -keystore "$KEYSTORE" -storepass android 2>/dev/null | grep -m1 "PrivateKeyEntry" | cut -d, -f1)
+          "$JAVA_HOME/bin/jarsigner" -keystore "$KEYSTORE" -storepass android -keypass android \
+            -signedjar "$BUILD_DIR/signed.aab" "$BUILD_DIR/app.aab" "$KEY_ALIAS"
+          "$JAVA_HOME/bin/jarsigner" -verify "$BUILD_DIR/signed.aab"
 
           cp "$BUILD_DIR/signed.aab" "$PROJ_DIR/dist/liusheng-ime-android-v2.aab"
           ls -lh "$PROJ_DIR/dist/liusheng-ime-android-v2.aab"
