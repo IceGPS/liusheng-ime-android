@@ -294,6 +294,7 @@ class PinyinInputController(
         isChinese = !isChinese
         engine.clear()
         keyboard?.isChineseMode = isChinese
+        symbolKeyboard?.isChineseMode = isChinese // V68：符号/数字键盘 。 键跟随中/英
         bar?.setLangIndicator(isChinese) // V67：同步候选栏中/英指示器
         refresh()
     }

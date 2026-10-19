@@ -29,11 +29,12 @@ import kotlin.math.abs
 /**
  * 极简语音输入法。
  *
- * 界面（V67 统一底行 6 键，与其他三套键盘一字不差）：
+ * 界面（V68 统一底行 7 键，与其他三套键盘一字不差）：
  *  - ABC：点按切拼音键盘，长按 500ms 调系统输入法选择器
  *  - 符 / 123：直达符号 / 数字键盘
  *  - 🎤 语音键（兼空格键）：短按输入空格，长按语音输入（不限按压位置）；
  *    松开转写上屏（走系统 commitText，光标天然正确）
+ *  - 。：点按=句号，上滑=逗号（固定全角，与语音转写输出一致）
  *  - ⌫ 点按删一个字符，长按连续删除
  *  - ⏎ 回车换行
  *
@@ -116,7 +117,7 @@ class VoiceImeService : InputMethodService() {
         }
         this.candidateBar = candidateBar
 
-        // 语音模式容器：装主输入行（V67 统一底行 6 键）
+        // 语音模式容器：装主输入行（V68 统一底行 7 键）
         val voiceBox = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -268,6 +269,52 @@ class VoiceImeService : InputMethodService() {
                     }
                     else -> false
                 }
+            }
+        }
+
+        // V68：。 键（点按=句号，上滑=逗号；固定全角——极简键盘无中/英切换 UI，
+        // 跟随看不见的状态会让用户困惑；且语音转写输出中文+全角标点，手动补标点保持全角才一致）
+        // 位置：空格键与退格键之间（四套键盘统一底行）
+        val punctBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
+            text = "。"
+            textSize = 20f
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                marginEnd = dp(2)
+            }
+        }
+        var punctDownY = 0f
+        var punctSwiped = false
+        punctBtn.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.alpha = 0.5f
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    punctDownY = event.y
+                    punctSwiped = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    // 上滑约半个键高进入逗号模式，轻振提示
+                    if (!punctSwiped && punctDownY - event.y > dp(28)) {
+                        punctSwiped = true
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.alpha = 1f
+                    v.performClick()
+                    // 固定全角（不跟随中/英，见上方注释）
+                    currentInputConnection?.commitText(if (punctSwiped) "，" else "。", 1)
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.alpha = 1f
+                    true
+                }
+                else -> false
             }
         }
 
@@ -434,10 +481,12 @@ class VoiceImeService : InputMethodService() {
 
         // V67 统一底行：[ABC] [符] [123] [🎤] [⌫] [⏎]，与其他三套键盘一字不差
         // （宽屏也不再加 ，/。 extras，保底行统一）
+        // V68：空格与 ⌫ 之间加 。 键 → [ABC] [符] [123] [🎤] [。] [⌫] [⏎]
         row.addView(abcBtn)
         row.addView(symbolBtn)
         row.addView(digitBtn)
         row.addView(voiceBtn)
+        row.addView(punctBtn)
         row.addView(backBtn)
         row.addView(enterBtn)
 

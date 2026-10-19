@@ -20,16 +20,17 @@ import kotlin.math.abs
 /**
  * 手绘 QWERTY 拼音键盘（布局仿搜狗输入法）。
  *
- * 布局（四行）：
+ * 布局（四行，V68）：
  * - 第 0 行：Q W E R T Y U I O P（上标数字 1～0）
- * - 第 1 行：A S D F G H J K L（上标符号 ～ ! @ # % " " * ?，居中）
- * - 第 2 行：Shift(↑) Z X C V B N M 退格(⌫)（字母上标 ( ) - _ : ; `）
- * - 第 3 行：符 | 123 | , | 空格(麦克风图标) | 。 | 中/英 | 回车(⏎)
+ * - 第 1 行：A S D F G H J K L（上标符号，居中）
+ * - 第 2 行：⇪ Z X C V B N M ⌫（搜狗式：M 正常宽度，⌫ 在 M 右侧）
+ * - 第 3 行：[语音] [符] [123] [空格🎤] [。] [⌫] [⏎]（四套键盘统一底行）
  *
  * 交互：
  * - 点按字母键：输入字母；按住字母键上滑约半个键高：输入上标的数字/符号并弹预览框
+ * - 。 键：点按=句号（中/英跟随输出全角/半角），上滑=逗号
  * - ⇪ 键：Caps Lock 开关（默认小写，按一下全键盘变大写，再按一下变回小写）
- * - 退格键：点按删一个，长按连续删除
+ * - 退格键（字母行 ⌫ 与底行 ⌫）：点按删一个，长按连续删除
  * - 空格键：短按=空格，长按 100ms=语音输入（不限按压位置）
  * - 跟随系统深浅色
  */
@@ -116,7 +117,8 @@ class PinyinKeyboardView @JvmOverloads constructor(
         "H" to "“", "J" to "”", "K" to "*", "L" to "?",
     ).map { (l, h) -> Key(l, h, Action.LETTER, 1f, false) }
 
-    // 第 2 行：Shift + Z～M（V67：⌫ 移到底行统一，此处去掉）
+    // 第 2 行：Shift + Z～M + 退格（V68：搜狗式布局，M 缩回正常宽度，⌫ 放 M 右侧；
+    // 底行 ⌫ 保留，有意重复）
     private val row2: List<Key> = buildList {
         add(Key("⇪", null, Action.SHIFT, 1.5f, true))
         add(Key("Z", "(", Action.LETTER, 1f, false))
@@ -125,16 +127,19 @@ class PinyinKeyboardView @JvmOverloads constructor(
         add(Key("V", "_", Action.LETTER, 1f, false))
         add(Key("B", ":", Action.LETTER, 1f, false))
         add(Key("N", ";", Action.LETTER, 1f, false))
-        add(Key("M", "`", Action.LETTER, 1.5f, false))
+        add(Key("M", "`", Action.LETTER, 1f, false))
+        add(Key("⌫", null, Action.BACKSPACE, 1.5f, true)) // 点按删一个，长按连删（与底行 ⌫ 一致）
     }
 
     // 第 3 行：统一底行（V67）：[语音] [符] [123] [🎤] [⌫] [⏎]，四套键盘一字不差
     // 中/英 → 候选栏右侧；`,``。` → 符号键盘
+    // V68：空格与 ⌫ 之间加 。/， 键（点按=句号，上滑=逗号，跟随中/英输出全角/半角）
     private val row3: List<Key> = buildList {
         add(Key("语音", null, Action.SWITCH_VOICE, 1.2f, true)) // 回极简语音键盘
         add(Key("符", null, Action.SYMBOL_PAGE, 1.0f, true))
         add(Key("123", null, Action.DIGIT_PAGE, 1.0f, true))
         add(Key("", null, Action.SPACE, 2.8f, false)) // 空格：短按=空格，长按=语音输入
+        add(Key("", null, Action.PERIOD, 1.0f, true)) // 。：点按=句号，上滑=逗号
         add(Key("⌫", null, Action.BACKSPACE, 1.2f, true)) // 点按删一个，长按连删
         add(Key("⏎", null, Action.ENTER, 1.4f, true))
     }
@@ -416,11 +421,16 @@ class PinyinKeyboardView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_MOVE -> {
                 val k = pressedKey ?: return true
-                // 上滑检测：仅字母键且有上标；阈值约半个键高
-                if (!swipeArmed && k.action == Action.LETTER && k.hint != null) {
+                // 上滑检测：字母键（有上标）或 。 键；阈值约半个键高
+                // 。 键上滑=逗号（V68）
+                if (!swipeArmed && ((k.action == Action.LETTER && k.hint != null) ||
+                            k.action == Action.PERIOD)) {
                     if (downY - y > keyH * 0.45f) {
                         swipeArmed = true
-                        showPreview(displayHint(k.hint), k.rect)
+                        val previewText = if (k.action == Action.PERIOD)
+                            SymbolWidth.of(',', isChineseMode).toString()
+                        else displayHint(k.hint!!)
+                        showPreview(previewText, k.rect)
                         performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                         invalidate()
                     }
@@ -446,8 +456,13 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 } else {
                     spaceTapValid = false
                     if (k != null) {
-                        if (swipeArmed && k.hint != null) {
-                            listener?.onSymbol(k.hint[0])
+                        if (swipeArmed) {
+                            when {
+                                // 。 键上滑=逗号（走 onLetter 由控制器按中英文转全角/半角）
+                                k.action == Action.PERIOD -> listener?.onLetter(',')
+                                k.hint != null -> listener?.onSymbol(k.hint[0])
+                                else -> handleTap(k, x, y)
+                            }
                         } else {
                             handleTap(k, x, y)
                         }
@@ -500,7 +515,8 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 listener?.onSpace()
             }
             Action.SWITCH_VOICE -> listener?.onVoiceMode()
-            // LANG/COMMA/PERIOD 键已在 V67 从底行移除（中/英→候选栏，,/。→符号键盘），分支保留以穷尽
+            // V68：PERIOD 是底行 。 键（点按=句号，上滑=逗号走 ACTION_UP 的 swipeArmed 分支）；
+            // LANG/COMMA 分支保留以穷尽（中/英→候选栏）
             Action.LANG -> listener?.onLangToggle()
             Action.COMMA -> listener?.onLetter(',')
             Action.PERIOD -> listener?.onLetter('.')

@@ -21,6 +21,8 @@ import kotlin.math.abs
 *
 * 空格键与极简键盘、拼音键盘行为一致：短按=空格，长按 100ms=语音输入
 * （录音时整键变红），松开转写上屏。
+*
+* V68：底行加 。 键（点按=句号，上滑=逗号，跟随中/英输出全角/半角）。
 */
 class SymbolKeyboardView @JvmOverloads constructor(
 context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0,
@@ -48,6 +50,17 @@ fun onVoiceRecordStop()
 
 var listener: Listener? = null
 
+/** 中文 / 英文模式（跟随控制器 toggleLang；决定 。/， 键输出全角/半角） */
+var isChineseMode: Boolean = true
+    set(value) {
+        if (field != value) {
+            field = value
+            // 键面文字在 layoutKeys 时按状态生成，需重新布局
+            requestLayout()
+            invalidate()
+        }
+    }
+
 var mode: Mode = Mode.SYMBOL
 private set
 /** 符号页：0=中文标点，1=英文符号 */
@@ -70,7 +83,7 @@ invalidate()
 // ---------- 按键模型 ----------
 
 private enum class Action {
-SYMBOL, BACKSPACE, ENTER, SPACE, ABC, SYMBOL_KEY, DIGIT_KEY,
+SYMBOL, BACKSPACE, ENTER, SPACE, ABC, SYMBOL_KEY, DIGIT_KEY, PUNCT,
 }
 
 private data class Key(
@@ -113,6 +126,7 @@ Mode.DIGIT -> digitRows
 }
 
 /** 统一底行（V67）：[ABC] [符] [123] [🎤] [⌫] [⏎]，四套键盘一字不差。
+ * V68：空格与 ⌫ 之间加 。 键（点按=句号，上滑=逗号，跟随中/英输出全角/半角）。
  *  - ABC：回拼音键盘
  *  - 符：符号模式下点按切换页面（显示 1/2）；数字模式下进入符号键盘
  *  - 123：数字模式下置灰无动作；符号模式下进入数字键盘
@@ -123,6 +137,7 @@ Key(if (mode == Mode.SYMBOL) if (symbolPage == 0) "1/2" else "2/2" else "符",
 1.0f, Action.SYMBOL_KEY, true),
 Key("123", 1.0f, Action.DIGIT_KEY, true, dimmed = (mode == Mode.DIGIT)),
 Key("", 2.8f, Action.SPACE, true),
+Key(if (isChineseMode) "。" else ".", 1.0f, Action.PUNCT, true),
 Key("⌫", 1.2f, Action.BACKSPACE, true),
 Key("⏎", 1.4f, Action.ENTER, true),
 )
@@ -272,6 +287,9 @@ private var pressedKey: Key? = null
 private var downX = 0f
 private var downY = 0f
 
+/** 。 键是否已进入“上滑输逗号”模式（V68） */
+private var swipeArmed = false
+
 private fun findKey(x: Float, y: Float): Key? =
 allKeys.firstOrNull { it.rect.contains(x, y)}
 
@@ -284,6 +302,7 @@ val k = findKey(x, y)?: return false
 pressedKey = k
 downX = x
 downY = y
+swipeArmed = false
 invalidate()
 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
 if (k.action == Action.BACKSPACE) {
@@ -298,11 +317,18 @@ handler.postDelayed(spaceLongPressRunnable, 100L)
 return true
 }
 MotionEvent.ACTION_MOVE -> {
+// V68：。 键上滑=逗号（阈值约半个键高）；进入后轻振提示
+val k = pressedKey
+if (k?.action == Action.PUNCT && !swipeArmed) {
+if (downY - y > dp(rowH) * 0.45f) {
+swipeArmed = true
+performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+}
+}
 // V65：只在手指滑出空格键才取消长按。之前"相对落点漂移 10dp 就取消"
 // 太严格——长按时手指自然漂移/按压力变化会导致 centroid 漂移，
 // 在某些设备上 100ms 内就触发取消，表现为"长按永远不变红"。
 // 空格键很宽，键内漂移是正常的，不应取消。
-val k = pressedKey
 if (spaceTapValid && !voiceRecording && k?.action == Action.SPACE) {
 val r = k.rect
 val slop = dp(8).toFloat()
@@ -327,8 +353,12 @@ spaceTapValid = false
 val k = pressedKey
 val up = findKey(x, y)
 // 退格已在 DOWN 时处理（立即删一个+长按连删），UP 不再重复触发
-if (k!= null && up === k && k.action != Action.BACKSPACE) fireKey(k)
+// V68：。 键上滑=逗号（swipeArmed 在 MOVE 中置位）
+if (k != null && k.action == Action.PUNCT && swipeArmed) {
+listener?.onSymbolKey(if (isChineseMode) "，" else ",")
+} else if (k!= null && up === k && k.action != Action.BACKSPACE) fireKey(k)
 }
+swipeArmed = false
 pressedKey = null
 invalidate()
 return true
@@ -337,6 +367,7 @@ MotionEvent.ACTION_CANCEL -> {
 handler.removeCallbacks(spaceLongPressRunnable)
 stopBackspaceRepeat()
 spaceTapValid = false
+swipeArmed = false
 if (voiceRecording) {
 voiceRecording = false
 listener?.onVoiceRecordStop()
@@ -356,6 +387,7 @@ Action.SYMBOL -> listener?.onSymbolKey(k.label)
 Action.ENTER -> listener?.onEnter()
 Action.SPACE -> listener?.onSpace()
 Action.ABC -> listener?.onBackToLetters()
+Action.PUNCT -> listener?.onSymbolKey(if (isChineseMode) "。" else ".")
 Action.SYMBOL_KEY -> {
 if (mode == Mode.SYMBOL) {
 // 符号模式：切换符号页面
