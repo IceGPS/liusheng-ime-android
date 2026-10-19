@@ -1,7 +1,6 @@
 package com.icegps.voiceime.ime
 
 import android.inputmethodservice.InputMethodService
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -9,7 +8,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.Toast
 import com.icegps.voiceime.ime.pinyin.CandidateBarView
@@ -31,12 +29,13 @@ import kotlin.math.abs
 /**
  * 极简语音输入法。
  *
- * 界面：
+ * 界面（V67 统一底行 6 键，与其他三套键盘一字不差）：
+ *  - ABC：点按切拼音键盘，长按 500ms 调系统输入法选择器
+ *  - 符 / 123：直达符号 / 数字键盘
  *  - 🎤 语音键（兼空格键）：短按输入空格，长按语音输入（不限按压位置）；
  *    松开转写上屏（走系统 commitText，光标天然正确）
  *  - ⌫ 点按删一个字符，长按连续删除
- *  - 🌐 切回上一个输入法
- *  - ⇧ 展开/收起符号区和数字区（均可横滑）
+ *  - ⏎ 回车换行
  *
  * 转写复用现有后端（局域网 / 端侧 MNN），与悬浮球同一套逻辑。
  */
@@ -70,8 +69,6 @@ class VoiceImeService : InputMethodService() {
     private val uiHandler = Handler(Looper.getMainLooper())
     private val recorder = Recorder()
     private var sherpaBackend: SherpaAsrBackend? = null
-    /** 设置键（长按切换 VAD，键面圆点表示开关状态） */
-    private var settingsBtn: Button? = null
 
     // 长按退格连续删除
     private val backspaceHandler = Handler(Looper.getMainLooper())
@@ -84,20 +81,9 @@ class VoiceImeService : InputMethodService() {
         }
     }
 
-    /**
-     * 宽屏模式：普通手机横屏，或折叠屏展开（内屏）。
-     * 宽屏时极简键盘在空格键左右各加一个全角标点键（，/。），共 9 键；
-     * 竖屏保持 7 键不变。
-     */
-    private fun isWideMode(): Boolean {
-        val cfg = resources.configuration
-        return cfg.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE ||
-            cfg.smallestScreenWidthDp >= 600
-    }
-
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        // 横屏/竖屏切换、折叠屏开合时重建输入视图，切换 7 键/9 键布局
+        // 横屏/竖屏切换、折叠屏开合时重建输入视图
         setInputView(onCreateInputView())
     }
 
@@ -130,7 +116,7 @@ class VoiceImeService : InputMethodService() {
         }
         this.candidateBar = candidateBar
 
-        // 语音模式容器：装原来的符号行、数字行、主输入行
+        // 语音模式容器：装主输入行（V67 统一底行 6 键）
         val voiceBox = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -141,24 +127,13 @@ class VoiceImeService : InputMethodService() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        // 数字/标点区开关：最左边，空心上箭头
-        val numpadToggleBtn = Button(ctx).apply {
-            styleBtn(this, btnColor, textColor)
-            text = if (Prefs.isNumPadExpanded(ctx)) "⇩" else "⇧"
-            textSize = 20f
-            isHapticFeedbackEnabled = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                marginEnd = dp(2)
-            }
-        }
-
         // 语音键（兼空格键）：短按输入空格，长按语音输入（不限按压位置）
         val voiceBtn = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
             text = "🎤"
             textSize = 20f
             isHapticFeedbackEnabled = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(56), 2f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 2.8f).apply {
                 marginEnd = dp(2)
             }
         }
@@ -302,7 +277,7 @@ class VoiceImeService : InputMethodService() {
             text = "⌫"
             textSize = 22f
             isHapticFeedbackEnabled = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1.2f).apply {
                 marginEnd = dp(2)
             }
         }
@@ -326,87 +301,9 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 设置键：打开设置页（放最左：切换服务端/端侧模型）
-        val settingsBtn = Button(ctx).apply {
-            styleBtn(this, btnColor, textColor)
-            // VAD 开关状态直接显示在设置键上（默认关闭）
-            text = if (Prefs.isVadEnabled(ctx)) "⚙️•" else "⚙️"
-            textSize = 22f
-            isHapticFeedbackEnabled = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                marginEnd = dp(2)
-            }
-        }
-        this.settingsBtn = settingsBtn
-        // 点按=打开设置；长按（500ms）=开关 VAD（默认关闭）
-        var settingsDownTime = 0L
-        settingsBtn.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.alpha = 0.5f
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    settingsDownTime = android.os.SystemClock.uptimeMillis()
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    v.alpha = 1f
-                    if (android.os.SystemClock.uptimeMillis() - settingsDownTime > 500) {
-                        // 长按：切换 VAD
-                        val newVal = !Prefs.isVadEnabled(ctx)
-                        Prefs.setVadEnabled(ctx, newVal)
-                        settingsBtn.text = if (newVal) "⚙️•" else "⚙️"
-                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                        Toast.makeText(
-                            ctx,
-                            if (newVal) "VAD 已开启：点按说话，静音自动停止" else "VAD 已关闭：按住说话",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    } else {
-                        v.performClick()
-                        val intent = android.content.Intent(ctx, com.icegps.voiceime.ui.SettingsActivity::class.java)
-                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        ctx.startActivity(intent)
-                    }
-                    true
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    v.alpha = 1f
-                    true
-                }
-                else -> false
-            }
-        }
+        // （V67 统一底行：⚙️ 设置键退役，设置入口改走候选栏 🎤；VAD 只留设置页内开关）
 
-        // 切回上一个输入法
-        val switchBtn = Button(ctx).apply {
-            styleBtn(this, btnColor, textColor)
-            text = "🌐"
-            textSize = 22f
-            isHapticFeedbackEnabled = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                marginEnd = dp(2)
-            }
-        }
-        switchBtn.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.alpha = 0.5f
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    v.alpha = 1f
-                    v.performClick()
-                    switchToPreviousIme()
-                    true
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    v.alpha = 1f
-                    true
-                }
-                else -> false
-            }
-        }
+        // （V67 统一底行：🌐 退役，长按 ABC 键调系统输入法选择器代替）
 
         // 回车键：换行（放最右）
         val enterBtn = Button(ctx).apply {
@@ -414,7 +311,7 @@ class VoiceImeService : InputMethodService() {
             text = "⏎"
             textSize = 22f
             isHapticFeedbackEnabled = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f)
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1.4f)
         }
         enterBtn.setOnTouchListener { v, event ->
             when (event.action) {
@@ -432,27 +329,35 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 拼音键盘切换键：切到 QWERTY 拼音键盘
-        val pinyinBtn = Button(ctx).apply {
+        // V67 统一底行：ABC / 符 / 123（与其他三套键盘一字不差）
+        // ABC 键：点按切拼音键盘；长按 500ms 调系统输入法选择器（替代退役的 🌐）
+        val abcBtn = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
-            text = "⌨️"
-            textSize = 22f
+            text = "ABC"
+            textSize = 20f
             isHapticFeedbackEnabled = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1.2f).apply {
                 marginEnd = dp(2)
             }
         }
-        pinyinBtn.setOnTouchListener { v, event ->
+        var abcDownTime = 0L
+        abcBtn.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    abcDownTime = android.os.SystemClock.uptimeMillis()
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     v.alpha = 1f
-                    v.performClick()
-                    showPinyinKeyboard()
+                    if (android.os.SystemClock.uptimeMillis() - abcDownTime > 500) {
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+                    } else {
+                        v.performClick()
+                        showPinyinKeyboard()
+                    }
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
@@ -463,144 +368,31 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        row.addView(numpadToggleBtn)
-        row.addView(settingsBtn)
-        row.addView(switchBtn)
-        row.addView(pinyinBtn)
-        // 宽屏模式（横屏 / 折叠屏展开）：空格键左右各加一个全角标点键；
-        // 7 个旧键 weight 比例不变（空格 2、其余 1），新键各占 1，即等比缩小
-        val wideMode = isWideMode()
-        if (wideMode) {
-            val commaBtn = Button(ctx).apply {
-                styleBtn(this, btnColor, textColor)
-                text = "，"
-                textSize = 20f
-                isHapticFeedbackEnabled = true
-                layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                    marginEnd = dp(2)
-                }
-                setOnClickListener {
-                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    currentInputConnection?.commitText("，", 1)
-                }
-            }
-            row.addView(commaBtn)
-        }
-        row.addView(voiceBtn)
-        if (wideMode) {
-            val periodBtn = Button(ctx).apply {
-                styleBtn(this, btnColor, textColor)
-                text = "。"
-                textSize = 20f
-                isHapticFeedbackEnabled = true
-                layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-                    marginEnd = dp(2)
-                }
-                setOnClickListener {
-                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    currentInputConnection?.commitText("。", 1)
-                }
-            }
-            row.addView(periodBtn)
-        }
-        row.addView(backBtn)
-        row.addView(enterBtn)
-
-        // 符号/数字区：HorizontalScrollView 包裹 LinearLayout，支持左右滑动
-        // 两行默认折叠，点 ⇧ 展开/收起，状态持久化
-        val symbolScroll = HorizontalScrollView(ctx).apply {
-            isHorizontalScrollBarEnabled = false
-            visibility = if (Prefs.isNumPadExpanded(ctx)) View.VISIBLE else View.GONE
-            setPadding(0, 0, 0, dp(4))
-        }
-        // 第一行：常用符号（加减乘除等号百分号已挪到数字区）
-        val symbolRow = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        symbolScroll.addView(
-            symbolRow,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ),
-        )
-        // 第二行：数字 + 数学符号
-        val digitScroll = HorizontalScrollView(ctx).apply {
-            isHorizontalScrollBarEnabled = false
-            visibility = if (Prefs.isNumPadExpanded(ctx)) View.VISIBLE else View.GONE
-            setPadding(0, 0, 0, dp(4))
-        }
-        val digitRow = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        digitScroll.addView(
-            digitRow,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ),
-        )
-        fun makeCharBtn(ch: String): Button {
-            val b = Button(ctx).apply {
+        // 符键：直达符号键盘
+        val symbolBtn = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
-            styleBtn(this, btnColor, textColor)
-                text = ch
-                textSize = 18f
-                isHapticFeedbackEnabled = true
-                // 滑动行内用固定宽度（weight 在 ScrollView 里不生效）
-                layoutParams = LinearLayout.LayoutParams(dp(52), dp(48)).apply {
-                    marginEnd = dp(1)
-                }
+            text = "符"
+            textSize = 20f
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                marginEnd = dp(2)
             }
-            b.setOnTouchListener { v, event ->
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        v.alpha = 0.5f
-                        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                        currentInputConnection?.commitText(ch, 1)
-                        true
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        v.alpha = 1f
-                        true
-                    }
-                    else -> false
-                }
-            }
-            return b
         }
-        // 第一行符号：中英文常用标点（点按上屏后不自动收起，方便连续输入）
-        for (ch in listOf("，","。","？","_","$","@","#","'","\"",";","!",":","、","…","—","·","～")) {
-            symbolRow.addView(makeCharBtn(ch))
-        }
-        // 第二行：数字 1-0 + 数学符号（与拼音键盘上标数字顺序一致）
-        for (ch in listOf("1","2","3","4","5","6","7","8","9","0","+","-","×","÷","=","%",">","<","(",")",".",",")) {
-            digitRow.addView(makeCharBtn(ch))
-        }
-
-        // 开关点击：展开/折叠
-        numpadToggleBtn.setOnTouchListener { v, event ->
+        symbolBtn.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    val expanded = symbolScroll.visibility == View.VISIBLE
-                    if (expanded) {
-                        symbolScroll.visibility = View.GONE
-                        digitScroll.visibility = View.GONE
-                        (v as Button).text = "⇧"
-                        Prefs.setNumPadExpanded(ctx, false)
-                    } else {
-                        symbolScroll.visibility = View.VISIBLE
-                        digitScroll.visibility = View.VISIBLE
-                        (v as Button).text = "⇩"
-                        Prefs.setNumPadExpanded(ctx, true)
-                    }
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_UP -> {
+                    v.alpha = 1f
+                    v.performClick()
+                    voiceBox?.visibility = View.GONE
+                    pinyinController?.showSymbolKeyboard()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
                     v.alpha = 1f
                     true
                 }
@@ -608,9 +400,48 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 语音模式各行装进 voiceBox：符号区、数字区、主行
-        voiceBox.addView(symbolScroll)
-        voiceBox.addView(digitScroll)
+        // 123 键：直达数字键盘
+        val digitBtn = Button(ctx).apply {
+            styleBtn(this, btnColor, textColor)
+            text = "123"
+            textSize = 20f
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                marginEnd = dp(2)
+            }
+        }
+        digitBtn.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.alpha = 0.5f
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.alpha = 1f
+                    v.performClick()
+                    voiceBox?.visibility = View.GONE
+                    pinyinController?.showDigitKeyboard()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.alpha = 1f
+                    true
+                }
+                else -> false
+            }
+        }
+
+        // V67 统一底行：[ABC] [符] [123] [🎤] [⌫] [⏎]，与其他三套键盘一字不差
+        // （宽屏也不再加 ，/。 extras，保底行统一）
+        row.addView(abcBtn)
+        row.addView(symbolBtn)
+        row.addView(digitBtn)
+        row.addView(voiceBtn)
+        row.addView(backBtn)
+        row.addView(enterBtn)
+
+        // V67：可收起的符号/数字区退役（V63 完整符号/数字键盘替代），voiceBox 只装主行
         voiceBox.addView(row)
 
         // 拼音键盘（默认隐藏）
@@ -819,21 +650,6 @@ class VoiceImeService : InputMethodService() {
             } catch (e: Exception) {
                 uiHandler.post { toast("转写失败：${e.message}") }
             }
-        }
-    }
-
-    private fun switchToPreviousIme() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                // API 28+：直接切回上一个输入法
-                switchToPreviousInputMethod()
-            } else {
-                // 低版本：弹出输入法选择器
-                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.showInputMethodPicker()
-            }
-        } catch (e: Exception) {
-            toast("切换失败，请手动切换输入法")
         }
     }
 

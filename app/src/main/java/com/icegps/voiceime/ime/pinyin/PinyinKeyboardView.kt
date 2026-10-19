@@ -116,7 +116,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
         "H" to "“", "J" to "”", "K" to "*", "L" to "?",
     ).map { (l, h) -> Key(l, h, Action.LETTER, 1f, false) }
 
-    // 第 2 行：Shift + Z～M + 退格
+    // 第 2 行：Shift + Z～M（V67：⌫ 移到底行统一，此处去掉）
     private val row2: List<Key> = buildList {
         add(Key("⇪", null, Action.SHIFT, 1.5f, true))
         add(Key("Z", "(", Action.LETTER, 1f, false))
@@ -125,20 +125,18 @@ class PinyinKeyboardView @JvmOverloads constructor(
         add(Key("V", "_", Action.LETTER, 1f, false))
         add(Key("B", ":", Action.LETTER, 1f, false))
         add(Key("N", ";", Action.LETTER, 1f, false))
-        add(Key("M", "`", Action.LETTER, 1f, false))
-        add(Key("⌫", null, Action.BACKSPACE, 1.5f, true))
+        add(Key("M", "`", Action.LETTER, 1.5f, false))
     }
 
-    // 第 3 行：底部功能行（权重按搜狗截图比例）
+    // 第 3 行：统一底行（V67）：[语音] [符] [123] [🎤] [⌫] [⏎]，四套键盘一字不差
+    // 中/英 → 候选栏右侧；`,``。` → 符号键盘
     private val row3: List<Key> = buildList {
-        add(Key("符", null, Action.SYMBOL_PAGE, 1.3f, true))
-        add(Key("123", null, Action.DIGIT_PAGE, 1.3f, true))
-        add(Key(",", null, Action.COMMA, 0.9f, false))
-        add(Key("⌨️", null, Action.SWITCH_VOICE, 1.3f, true)) // 切回极简语音键盘
-        add(Key("", null, Action.SPACE, 3.0f, false)) // 空格：短按=空格，长按=语音输入
-        add(Key("。", null, Action.PERIOD, 0.9f, false))
-        add(Key("中/英", null, Action.LANG, 1.3f, true))
-        add(Key("⏎", null, Action.ENTER, 1.5f, true))
+        add(Key("语音", null, Action.SWITCH_VOICE, 1.2f, true)) // 回极简语音键盘
+        add(Key("符", null, Action.SYMBOL_PAGE, 1.0f, true))
+        add(Key("123", null, Action.DIGIT_PAGE, 1.0f, true))
+        add(Key("", null, Action.SPACE, 2.8f, false)) // 空格：短按=空格，长按=语音输入
+        add(Key("⌫", null, Action.BACKSPACE, 1.2f, true)) // 点按删一个，长按连删
+        add(Key("⏎", null, Action.ENTER, 1.4f, true))
     }
 
     private val allRows = listOf(row0, row1, row2, row3)
@@ -502,6 +500,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 listener?.onSpace()
             }
             Action.SWITCH_VOICE -> listener?.onVoiceMode()
+            // LANG/COMMA/PERIOD 键已在 V67 从底行移除（中/英→候选栏，,/。→符号键盘），分支保留以穷尽
             Action.LANG -> listener?.onLangToggle()
             Action.COMMA -> listener?.onLetter(',')
             Action.PERIOD -> listener?.onLetter('.')

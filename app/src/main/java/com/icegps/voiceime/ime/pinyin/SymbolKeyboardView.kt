@@ -70,7 +70,7 @@ invalidate()
 // ---------- 按键模型 ----------
 
 private enum class Action {
-SYMBOL, BACKSPACE, ENTER, SPACE, ABC, PAGE, GOTO_DIGIT, GOTO_SYMBOL,
+SYMBOL, BACKSPACE, ENTER, SPACE, ABC, SYMBOL_KEY, DIGIT_KEY,
 }
 
 private data class Key(
@@ -78,6 +78,7 @@ val label: String,
 val weight: Float,
 val action: Action,
 val isFunc: Boolean = false,
+val dimmed: Boolean = false,
 val rect: RectF = RectF(),
 )
 
@@ -111,24 +112,20 @@ Mode.SYMBOL -> if (symbolPage == 0) symbolPageZh else symbolPageEn
 Mode.DIGIT -> digitRows
 }
 
-/** 底部功能行 */
-private fun bottomRow(): List<Key> = when (mode) {
-Mode.SYMBOL -> listOf(
+/** 统一底行（V67）：[ABC] [符] [123] [🎤] [⌫] [⏎]，四套键盘一字不差。
+ *  - ABC：回拼音键盘
+ *  - 符：符号模式下点按切换页面（显示 1/2）；数字模式下进入符号键盘
+ *  - 123：数字模式下置灰无动作；符号模式下进入数字键盘
+ *  - 🎤：空格（长按语音），图标在 onDraw 绘制 */
+private fun bottomRow(): List<Key> = listOf(
 Key("ABC", 1.2f, Action.ABC, true),
-Key(if (symbolPage == 0) "1/2" else "2/2", 1.0f, Action.PAGE, true),
-Key("123", 1.0f, Action.GOTO_DIGIT, true),
-Key("空格", 2.5f, Action.SPACE, true),
+Key(if (mode == Mode.SYMBOL) if (symbolPage == 0) "1/2" else "2/2" else "符",
+1.0f, Action.SYMBOL_KEY, true),
+Key("123", 1.0f, Action.DIGIT_KEY, true, dimmed = (mode == Mode.DIGIT)),
+Key("", 2.8f, Action.SPACE, true),
 Key("⌫", 1.2f, Action.BACKSPACE, true),
 Key("⏎", 1.4f, Action.ENTER, true),
 )
-Mode.DIGIT -> listOf(
-Key("ABC", 1.2f, Action.ABC, true),
-Key("符", 1.0f, Action.GOTO_SYMBOL, true),
-Key("空格", 3.5f, Action.SPACE, true),
-Key("⌫", 1.2f, Action.BACKSPACE, true),
-Key("⏎", 1.4f, Action.ENTER, true),
-)
-}
 
 // ---------- 配色（与 PinyinKeyboardView 一致，跟随系统深浅色） ----------
 
@@ -238,9 +235,12 @@ emojiPaint.textSize = sp(22f)
 canvas.drawText("🎤", r.centerX(), textBaseline(r, emojiPaint), emojiPaint)
 } else {
 labelPaint.textSize = if (k.isFunc) sp(16f) else sp(22f)
+// 置灰键（如数字模式下的 123）：文字半透明
 labelPaint.color = keyTextColor
+labelPaint.alpha = if (k.dimmed) 90 else 255
 val fm = labelPaint.fontMetrics
 canvas.drawText(k.label, r.centerX(), r.centerY() - (fm.ascent + fm.descent) / 2, labelPaint)
+labelPaint.alpha = 255
 }
 }
 }
@@ -356,13 +356,21 @@ Action.SYMBOL -> listener?.onSymbolKey(k.label)
 Action.ENTER -> listener?.onEnter()
 Action.SPACE -> listener?.onSpace()
 Action.ABC -> listener?.onBackToLetters()
-Action.PAGE -> {
+Action.SYMBOL_KEY -> {
+if (mode == Mode.SYMBOL) {
+// 符号模式：切换符号页面
 symbolPage = 1 - symbolPage
 requestLayout()
 invalidate()
+} else {
+// 数字模式：进入符号键盘
+listener?.onGotoSymbol()
 }
-Action.GOTO_DIGIT -> listener?.onGotoDigit()
-Action.GOTO_SYMBOL -> listener?.onGotoSymbol()
+}
+Action.DIGIT_KEY -> {
+// 数字模式下置灰无动作；符号模式下进入数字键盘
+if (mode != Mode.DIGIT) listener?.onGotoDigit()
+}
 else -> { /* 已处理 */ }
 }
 }

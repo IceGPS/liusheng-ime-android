@@ -82,6 +82,7 @@ class PinyinInputController(
         bar.onOpenSettings = { onOpenSettings?.invoke() }
         bar.onCandidateClick = { selectCandidate(it) }
         bar.onExpandCandidates = { onExpandCandidates?.invoke() ?: expandCandidatePanel() }
+        bar.onLangToggle = { toggleLang() } // V67：中/英移至候选栏右侧
         refresh()
     }
 
@@ -185,6 +186,7 @@ class PinyinInputController(
         val composing = engine.getComposingText()
         bar?.setComposing(composing)
         bar?.setCandidates(engine.getAllCandidates())
+        bar?.setLangIndicator(isChinese)
         val conn = ic() ?: return
         if (composing.isNotEmpty()) {
             conn.setComposingText(composing, 1)
@@ -292,6 +294,7 @@ class PinyinInputController(
         isChinese = !isChinese
         engine.clear()
         keyboard?.isChineseMode = isChinese
+        bar?.setLangIndicator(isChinese) // V67：同步候选栏中/英指示器
         refresh()
     }
 

@@ -42,6 +42,9 @@ class CandidateBarView @JvmOverloads constructor(
     /** 点左上角 🎤：进入留声输入法设置界面 */
     var onOpenSettings: (() -> Unit)? = null
 
+    /** 点右端"中/英"：切换中英文输入 */
+    var onLangToggle: (() -> Unit)? = null
+
     /** 点候选词：按下标选中上屏 */
     var onCandidateClick: ((index: Int) -> Unit)? = null
 
@@ -50,6 +53,7 @@ class CandidateBarView @JvmOverloads constructor(
 
     private val candidatesRow: LinearLayout
     private val expandBtn: TextView
+    private val langBtn: TextView
 
     /** 拼音小耳朵悬浮气泡 */
     private var earPopup: PopupWindow? = null
@@ -106,6 +110,21 @@ class CandidateBarView @JvmOverloads constructor(
         )
         addView(scroll, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
 
+        // 右：中/英切换（V67：从拼音键盘底行移过来，保持底行统一）
+        langBtn = TextView(context).apply {
+            text = "中"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = false
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                onLangToggle?.invoke()
+            }
+        }
+        addView(langBtn, LayoutParams(dp(48), LayoutParams.MATCH_PARENT))
+
         // 右：">" 展开按钮（始终占位，保持栏高稳定）
         expandBtn = TextView(context).apply {
             text = ">"
@@ -121,6 +140,15 @@ class CandidateBarView @JvmOverloads constructor(
             }
         }
         addView(expandBtn, LayoutParams(dp(40), LayoutParams.MATCH_PARENT))
+    }
+
+    /**
+     * 设置中/英指示器（V67）：中文模式显示"中"（高亮），英文模式显示"英"。
+     */
+    fun setLangIndicator(isChinese: Boolean) {
+        langBtn.text = if (isChinese) "中" else "英"
+        // 高亮当前：中文用蓝色，英文用灰色（与拼音键盘原中/英键一致）
+        langBtn.setTextColor(if (isChinese) 0xFF007AFF.toInt() else hintColor)
     }
 
     /**
