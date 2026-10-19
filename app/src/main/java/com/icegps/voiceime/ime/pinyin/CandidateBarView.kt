@@ -167,7 +167,7 @@ class CandidateBarView @JvmOverloads constructor(
                     val r = dp(8).toFloat()
                     cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
                 }
-                setPadding(dp(10), dp(5), dp(10), dp(5))
+                setPadding(dp(10), dp(2), dp(10), dp(2))
                 isFocusable = false
             }
             tv.measure(
