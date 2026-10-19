@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 中文语言的设备显示中文名（简称/全称） -->
+    <string name="app_name">留声输入法</string>
+    <string name="app_full_name">留声离线语音输入法</string>
+</resources>

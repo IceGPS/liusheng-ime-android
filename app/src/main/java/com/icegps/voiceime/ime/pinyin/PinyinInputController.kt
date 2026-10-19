@@ -137,14 +137,14 @@ class PinyinInputController(
 
     private fun handleLetter(ch: Char) {
         if (!isChinese) {
-            // 英文模式：直接上屏（含 Shift 大小写）
+            // 英文模式：直接上屏（含 Shift 大小写），标点保持半角
             ic()?.commitText(ch.toString(), 1)
             return
         }
-        // 中文模式：逗号键出中文逗号
-        if (ch == ',') {
-            commitWithComposingFlushed("，")
-            return
+        // 中文模式：常用标点转全角
+        when (ch) {
+            ',' -> { commitWithComposingFlushed("，"); return }
+            '.' -> { commitWithComposingFlushed("。"); return }
         }
         if (ch in 'A'..'Z') {
             // 中文模式 + 大写锁定：和电脑中文输入法一致，大写字母直接上屏，不走拼音
@@ -156,7 +156,16 @@ class PinyinInputController(
     }
 
     private fun handleSymbol(sym: Char) {
-        commitWithComposingFlushed(sym.toString())
+        // 上滑输入的上标符号：中文状态转全角（技术符号保持半角），英文状态保持半角
+        if (!isChinese) {
+            commitWithComposingFlushed(sym.toString())
+            return
+        }
+        when (sym) {
+            '"' -> commitWithComposingFlushed(SymbolWidth.quote(true))
+            '\'' -> commitWithComposingFlushed(SymbolWidth.singleQuote(true))
+            else -> commitWithComposingFlushed(SymbolWidth.of(sym, true).toString())
+        }
     }
 
     /** 先把未完成的拼音串按首选上屏，再提交给定文本 */

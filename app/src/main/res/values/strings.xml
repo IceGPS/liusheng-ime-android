@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">留声输入法</string>
+    <!-- 默认英文：非中文语言的设备显示英文名 -->
+    <string name="app_name">Liusheng IME</string>
+    <string name="app_full_name">Liusheng offline voice IME</string>
     <string name="a11y_desc">voice-ime 需要无障碍权限，才能把语音转写的文字输入到当前 App 的输入框里。不会读取密码框内容。</string>
     <string name="notif_channel_name">voice-ime 服务</string>
     <string name="notif_channel_desc">悬浮球录音服务的常驻通知</string>

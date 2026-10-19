@@ -81,6 +81,23 @@ class VoiceImeService : InputMethodService() {
         }
     }
 
+    /**
+     * 宽屏模式：普通手机横屏，或折叠屏展开（内屏）。
+     * 宽屏时极简键盘在空格键左右各加一个全角标点键（，/。），共 9 键；
+     * 竖屏保持 7 键不变。
+     */
+    private fun isWideMode(): Boolean {
+        val cfg = resources.configuration
+        return cfg.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE ||
+            cfg.smallestScreenWidthDp >= 600
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 横屏/竖屏切换、折叠屏开合时重建输入视图，切换 7 键/9 键布局
+        setInputView(onCreateInputView())
+    }
+
     override fun onCreateInputView(): View {
         val ctx = this
         // 跟随系统深浅色
@@ -429,7 +446,42 @@ class VoiceImeService : InputMethodService() {
         row.addView(settingsBtn)
         row.addView(switchBtn)
         row.addView(pinyinBtn)
+        // 宽屏模式（横屏 / 折叠屏展开）：空格键左右各加一个全角标点键；
+        // 7 个旧键 weight 比例不变（空格 2、其余 1），新键各占 1，即等比缩小
+        val wideMode = isWideMode()
+        if (wideMode) {
+            val commaBtn = Button(ctx).apply {
+                styleBtn(this, btnColor, textColor)
+                text = "，"
+                textSize = 20f
+                isHapticFeedbackEnabled = true
+                layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                    marginEnd = dp(2)
+                }
+                setOnClickListener {
+                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    currentInputConnection?.commitText("，", 1)
+                }
+            }
+            row.addView(commaBtn)
+        }
         row.addView(voiceBtn)
+        if (wideMode) {
+            val periodBtn = Button(ctx).apply {
+                styleBtn(this, btnColor, textColor)
+                text = "。"
+                textSize = 20f
+                isHapticFeedbackEnabled = true
+                layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                    marginEnd = dp(2)
+                }
+                setOnClickListener {
+                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    currentInputConnection?.commitText("。", 1)
+                }
+            }
+            row.addView(periodBtn)
+        }
         row.addView(backBtn)
         row.addView(enterBtn)
 

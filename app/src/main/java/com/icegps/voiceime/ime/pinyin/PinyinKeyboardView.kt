@@ -79,6 +79,13 @@ class PinyinKeyboardView @JvmOverloads constructor(
 
     /** 中文模式（影响“中/英”键显示；输入路由由 Controller 决定） */
     var isChineseMode: Boolean = true
+        set(value) {
+            if (field != value) {
+                field = value
+                // 中/英切换后重绘：逗号/句号键面、上标符号按状态切全角半角
+                invalidate()
+            }
+        }
         set(v) {
             field = v
             invalidate()
@@ -274,6 +281,17 @@ class PinyinKeyboardView @JvmOverloads constructor(
         }
     }
 
+    /** 上标 hint 按中英文状态取显示文本（中文状态常用标点显示全角） */
+    private fun displayHint(hint: String): String {
+        if (!isChineseMode) return hint
+        val ch = hint[0]
+        return when (ch) {
+            '"' -> SymbolWidth.quote(true)
+            '\'' -> SymbolWidth.singleQuote(true)
+            else -> SymbolWidth.of(ch, true).toString()
+        }
+    }
+
     private fun drawKey(canvas: Canvas, k: Key) {
         val r = k.rect
         if (r.isEmpty) return
@@ -289,10 +307,10 @@ class PinyinKeyboardView @JvmOverloads constructor(
         }
         canvas.drawRoundRect(r, cornerR, cornerR, bgPaint)
 
-        // 上标 hint（小字，置顶）
+        // 上标 hint（小字，置顶）：中文状态下常用标点显示全角
         if (k.hint != null) {
             hintPaint.textSize = sp(11f)
-            canvas.drawText(k.hint, r.centerX(), r.top + sp(14f), hintPaint)
+            canvas.drawText(displayHint(k.hint), r.centerX(), r.top + sp(14f), hintPaint)
         }
 
         // 主标签
@@ -312,7 +330,13 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 // 有上标时主标签略下移，避免重叠
                 val cy = if (k.hint != null) r.centerY() + dp(5) else r.centerY()
                 // 字母键跟随 Caps Lock 状态显示大小写
-                val label = if (k.action == Action.LETTER && !capsLock) k.label.lowercase() else k.label
+                val raw = if (k.action == Action.LETTER && !capsLock) k.label.lowercase() else k.label
+                // 逗号/句号键面按中英文状态显示全角/半角
+                val label = when (k.action) {
+                    Action.COMMA -> SymbolWidth.of(',', isChineseMode).toString()
+                    Action.PERIOD -> SymbolWidth.of('.', isChineseMode).toString()
+                    else -> raw
+                }
                 canvas.drawText(
                     label, r.centerX(),
                     cy - (labelPaint.fontMetrics.ascent + labelPaint.fontMetrics.descent) / 2,
@@ -402,7 +426,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 if (!swipeArmed && k.action == Action.LETTER && k.hint != null) {
                     if (downY - y > keyH * 0.45f) {
                         swipeArmed = true
-                        showPreview(k.hint, k.rect)
+                        showPreview(displayHint(k.hint), k.rect)
                         performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                         invalidate()
                     }
@@ -484,7 +508,7 @@ class PinyinKeyboardView @JvmOverloads constructor(
             Action.SWITCH_VOICE -> listener?.onVoiceMode()
             Action.LANG -> listener?.onLangToggle()
             Action.COMMA -> listener?.onLetter(',')
-            Action.PERIOD -> listener?.onLetter('。')
+            Action.PERIOD -> listener?.onLetter('.')
             Action.SYMBOL_PAGE -> listener?.onSymbolPage()
             Action.DIGIT_PAGE -> listener?.onDigitPage()
         }
