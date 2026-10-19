@@ -135,15 +135,14 @@ class CandidateBarView @JvmOverloads constructor(
         val tv = earPopupTv
         if (earPopup?.isShowing == true && tv != null) {
             tv.text = text
-            // 按新文本重新测量，更新浮层尺寸（位置保持左上锚定）
+            // 按新文本重新测量，只更新浮层尺寸，不动位置
+            // （位置由 showAsDropDown 一次定好：锚定本栏上方）
             tv.measure(
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
             )
-            val w = tv.measuredWidth
-            val h = tv.measuredHeight
             try {
-                earPopup?.update(this, dp(8), -h - dp(2), w, h)
+                earPopup?.update(tv.measuredWidth, tv.measuredHeight)
             } catch (e: Exception) {
                 dismissEarBubble()
             }
@@ -152,10 +151,10 @@ class CandidateBarView @JvmOverloads constructor(
         }
     }
 
-    /** 显示拼音小耳朵悬浮气泡（本栏左上方） */
+    /** 显示拼音小耳朵悬浮气泡（本栏上方，左对齐到候选区） */
     private fun showEarBubble(text: String) {
         dismissEarBubble()
-        if (!isAttachedToWindow || width == 0) return
+        if (!isAttachedToWindow || width == 0 || height == 0) return
         try {
             val tv = TextView(context).apply {
                 this.text = text
@@ -177,14 +176,16 @@ class CandidateBarView @JvmOverloads constructor(
             val h = tv.measuredHeight
             earPopupTv = tv
             earPopup = PopupWindow(tv, w, h, false).apply {
-                // 纯展示气泡：不抢焦点、不拦截触摸
+                // 纯展示气泡：不抢焦点、不拦截触摸（下面的话筒按钮仍可点）
                 isTouchable = false
                 isOutsideTouchable = false
                 setBackgroundDrawable(ColorDrawable(0x00000000))
                 inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
             }
-            // 显示在本栏上方：x=8dp 左对齐，y 偏移 = -(气泡高 + 2dp 间隙)
-            earPopup?.showAsDropDown(this, dp(8), -h - dp(2))
+            // 显示在本栏上方：showAsDropDown 的 yoff 相对本栏底部计算，
+            // 要浮到栏上方需再往上抬一个栏高：yoff = -(栏高 + 气泡高 + 间隙)；
+            // x 取 60dp：越过左侧话筒按钮，左对齐到候选区（不盖话筒）
+            earPopup?.showAsDropDown(this, dp(60), -(height + h + dp(4)))
         } catch (e: Exception) {
             // 悬浮失败不影响主流程（候选栏本身仍可用）
             dismissEarBubble()
@@ -204,12 +205,12 @@ class CandidateBarView @JvmOverloads constructor(
         dismissCandidatePanel()
     }
 
-    /** 设置候选词列表（重建全部候选项，不限数量） */
+    /** 设置候选词列表（重建全部候选项，不限数量；自动去重） */
     fun setCandidates(list: List<String>) {
         // 候选变化时收起浮层（避免显示过期候选）
         dismissCandidatePanel()
         candidatesRow.removeAllViews()
-        list.forEachIndexed { index, word ->
+        list.distinct().forEachIndexed { index, word ->
             val tv = TextView(context).apply {
                 text = word
                 textSize = 22f
