@@ -97,6 +97,12 @@ class PinyinInputController(
             override fun onBackToLetters() = showLetterKeyboard()
             override fun onGotoDigit() = showDigitKeyboard()
             override fun onGotoSymbol() = showSymbolKeyboard()
+            override fun onVoiceRecordStart() {
+                // 符号键盘无拼音组合，直接走录音链路（与拼音键盘同一套）
+                discardComposing()
+                onVoiceRecordStart?.invoke()
+            }
+            override fun onVoiceRecordStop() { onVoiceRecordStop?.invoke() }
         }
     }
 

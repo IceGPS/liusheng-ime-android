@@ -5,16 +5,22 @@ import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.abs
 
 /**
 * 符号 / 数字键盘（V63）。
 *
 * 替换式全键盘：拼音键盘点"符"/"123"进入。点选符号后**停留**（可连打，
 * 不自动跳回字母键盘）；ABC 返回字母键盘。
+*
+* 空格键与极简键盘、拼音键盘行为一致：短按=空格，长按 100ms=语音输入
+* （录音时整键变红），松开转写上屏。
 */
 class SymbolKeyboardView @JvmOverloads constructor(
 context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0,
@@ -34,6 +40,10 @@ fun onBackToLetters()
 fun onGotoDigit()
 /** 数字键盘 → 符号键盘 */
 fun onGotoSymbol()
+/** 空格键长按开始录音（与极简/拼音键盘一致） */
+fun onVoiceRecordStart()
+/** 松开结束录音转写 */
+fun onVoiceRecordStop()
 }
 
 var listener: Listener? = null
@@ -148,6 +158,21 @@ private val cornerR: Float get() = dp(6).toFloat()
 
 private var allKeys: List<Key> = emptyList()
 
+// ---------- 空格键语音（与拼音键盘一致：短按=空格，长按 100ms=语音） ----------
+
+private var spaceTapValid = false
+private var voiceRecording = false
+private val handler = Handler(Looper.getMainLooper())
+private val spaceLongPressRunnable = Runnable {
+if (spaceTapValid &&!voiceRecording) {
+spaceTapValid = false
+voiceRecording = true
+performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+listener?.onVoiceRecordStart()
+invalidate()
+}
+}
+
 init {
 isFocusable = false
 isFocusableInTouchMode = false
@@ -189,6 +214,8 @@ val r = k.rect
 if (r.isEmpty) continue
 bgPaint.color = when {
 k === pressedKey -> pressedColor
+// 录音中：整个空格键变红（与极简/拼音键盘一致）
+k.action == Action.SPACE && voiceRecording -> 0xFFE53935.toInt()
 k.isFunc -> funcBgColor
 else -> keyBgColor
 }
@@ -203,28 +230,64 @@ canvas.drawText(k.label, r.centerX(), r.centerY() - (fm.ascent + fm.descent) / 2
 // ---------- 触摸 ----------
 
 private var pressedKey: Key? = null
+private var downX = 0f
+private var downY = 0f
 
 private fun findKey(x: Float, y: Float): Key? =
 allKeys.firstOrNull { it.rect.contains(x, y)}
 
 override fun onTouchEvent(event: MotionEvent): Boolean {
+val x = event.x
+val y = event.y
 when (event.actionMasked) {
 MotionEvent.ACTION_DOWN -> {
-val k = findKey(event.x, event.y)?: return false
+val k = findKey(x, y)?: return false
 pressedKey = k
+downX = x
+downY = y
 invalidate()
 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+if (k.action == Action.SPACE) {
+// 空格键：短按=空格，长按 100ms=语音输入
+spaceTapValid = true
+handler.postDelayed(spaceLongPressRunnable, 100L)
+}
+return true
+}
+MotionEvent.ACTION_MOVE -> {
+// 未进入录音前滑出 10dp 则取消短按和长按，避免误触
+if (spaceTapValid &&!voiceRecording &&
+(abs(x - downX) > dp(10) || abs(y - downY) > dp(10))
+) {
+spaceTapValid = false
+handler.removeCallbacks(spaceLongPressRunnable)
+}
 return true
 }
 MotionEvent.ACTION_UP -> {
+handler.removeCallbacks(spaceLongPressRunnable)
+if (voiceRecording) {
+// 长按录音结束：直接停止转写，不走点按逻辑
+voiceRecording = false
+performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+listener?.onVoiceRecordStop()
+} else {
+spaceTapValid = false
 val k = pressedKey
+val up = findKey(x, y)
+if (k!= null && up === k) fireKey(k)
+}
 pressedKey = null
 invalidate()
-val up = findKey(event.x, event.y)
-if (k!= null && up === k) fireKey(k)
 return true
 }
 MotionEvent.ACTION_CANCEL -> {
+handler.removeCallbacks(spaceLongPressRunnable)
+spaceTapValid = false
+if (voiceRecording) {
+voiceRecording = false
+listener?.onVoiceRecordStop()
+}
 pressedKey = null
 invalidate()
 return true
