@@ -1,0 +1,252 @@
+package com.icegps.voiceime.ime.pinyin
+
+import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.util.AttributeSet
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
+import android.view.View
+
+/**
+* 符号 / 数字键盘（V63）。
+*
+* 替换式全键盘：拼音键盘点"符"/"123"进入。点选符号后**停留**（可连打，
+* 不自动跳回字母键盘）；ABC 返回字母键盘。
+*/
+class SymbolKeyboardView @JvmOverloads constructor(
+context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0,
+): View(context, attrs, defStyleAttr) {
+
+enum class Mode { SYMBOL, DIGIT}
+
+interface Listener {
+/** 点选符号/数字键：直接上屏（停留，不跳回） */
+fun onSymbolKey(sym: String)
+fun onBackspace()
+fun onEnter()
+fun onSpace()
+/** ABC：返回字母键盘 */
+fun onBackToLetters()
+/** 符号键盘 → 数字键盘 */
+fun onGotoDigit()
+/** 数字键盘 → 符号键盘 */
+fun onGotoSymbol()
+}
+
+var listener: Listener? = null
+
+var mode: Mode = Mode.SYMBOL
+private set
+/** 符号页：0=中文标点，1=英文符号 */
+var symbolPage: Int = 0
+private set
+
+fun showSymbol() {
+mode = Mode.SYMBOL
+symbolPage = 0
+requestLayout()
+invalidate()
+}
+
+fun showDigit() {
+mode = Mode.DIGIT
+requestLayout()
+invalidate()
+}
+
+// ---------- 按键模型 ----------
+
+private enum class Action {
+SYMBOL, BACKSPACE, ENTER, SPACE, ABC, PAGE, GOTO_DIGIT, GOTO_SYMBOL,
+}
+
+private data class Key(
+val label: String,
+val weight: Float,
+val action: Action,
+val isFunc: Boolean = false,
+val rect: RectF = RectF(),
+)
+
+/** 中文标点页（全角） */
+private val symbolPageZh = listOf(
+listOf("，", "。", "；", "：", "？", "！"),
+listOf("、", "…", "—", "·", "《", "》"),
+listOf("「", "」", "『", "』", "（", "）"),
+listOf("", "￥", "＂", "＇", "～"),
+)
+
+/** 英文符号页（半角） */
+private val symbolPageEn = listOf(
+listOf(",", ".", ";", ":", "?", "!", "'"),
+listOf("\"", "-", "_", "(", ")", "[", "]"),
+listOf("{", "}", "@", "#", "$", "%", "&"),
+listOf("*", "+", "=", "/", "\\", "|", "~"),
+)
+
+/** 数字页 */
+private val digitRows = listOf(
+listOf("1", "2", "3", "+", "-"),
+listOf("4", "5", "6", "×", "÷"),
+listOf("7", "8", "9", "=", "%"),
+listOf(".", "0", "(", ")", ","),
+)
+
+/** 当前网格行（不含底部功能行） */
+private fun gridRows(): List<List<String>> = when (mode) {
+Mode.SYMBOL -> if (symbolPage == 0) symbolPageZh else symbolPageEn
+Mode.DIGIT -> digitRows
+}
+
+/** 底部功能行 */
+private fun bottomRow(): List<Key> = when (mode) {
+Mode.SYMBOL -> listOf(
+Key("ABC", 1.2f, Action.ABC, true),
+Key(if (symbolPage == 0) "1/2" else "2/2", 1.0f, Action.PAGE, true),
+Key("123", 1.0f, Action.GOTO_DIGIT, true),
+Key("空格", 2.5f, Action.SPACE, true),
+Key("⌫", 1.2f, Action.BACKSPACE, true),
+Key("⏎", 1.4f, Action.ENTER, true),
+)
+Mode.DIGIT -> listOf(
+Key("ABC", 1.2f, Action.ABC, true),
+Key("符", 1.0f, Action.GOTO_SYMBOL, true),
+Key("空格", 3.5f, Action.SPACE, true),
+Key("⌫", 1.2f, Action.BACKSPACE, true),
+Key("⏎", 1.4f, Action.ENTER, true),
+)
+}
+
+// ---------- 配色（与 PinyinKeyboardView 一致，跟随系统深浅色） ----------
+
+private val isDark = (resources.configuration.uiMode and
+Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
+private val keyBgColor = if (isDark) 0xFF2C2C2E.toInt() else 0xFFFFFFFF.toInt()
+private val funcBgColor = if (isDark) 0xFF3A3A3C.toInt() else 0xFFE3E3E8.toInt()
+private val keyTextColor = if (isDark) 0xFFFFFFFF.toInt() else 0xFF1C1C1E.toInt()
+private val pressedColor = if (isDark) 0xFF48484A.toInt() else 0xFFD1D1D6.toInt()
+
+private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+textAlign = Paint.Align.CENTER
+color = keyTextColor
+}
+
+// ---------- 尺寸 ----------
+
+private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+private fun sp(v: Float): Float = v * resources.displayMetrics.scaledDensity
+
+private val rowH = 54
+private val rowGap = 6
+private val sidePad = 4
+private val cornerR: Float get() = dp(6).toFloat()
+
+private var allKeys: List<Key> = emptyList()
+
+init {
+isFocusable = false
+isFocusableInTouchMode = false
+}
+
+override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+val w = MeasureSpec.getSize(widthMeasureSpec)
+// 4 行网格 + 1 行功能行
+val h = dp(rowH) * 5 + dp(rowGap) * 4 + dp(sidePad) * 2
+setMeasuredDimension(w, h)
+layoutKeys(w, h)
+}
+
+private fun layoutKeys(w: Int, h: Int) {
+val keys = mutableListOf<Key>()
+val rows = gridRows().map { row -> row.map { Key(it, 1f, Action.SYMBOL)}} + listOf(bottomRow())
+var y = dp(sidePad).toFloat()
+val contentW = w - dp(sidePad) * 2
+for (row in rows) {
+val totalW = row.sumOf { it.weight.toDouble()}.toFloat()
+var x = dp(sidePad).toFloat()
+for (k in row) {
+val kw = contentW * k.weight / totalW
+// 键之间留 3dp 间隙
+k.rect.set(x + dp(3) / 2f, y, x + kw - dp(3) / 2f, y + dp(rowH))
+x += kw
+keys.add(k)
+}
+y += dp(rowH) + dp(rowGap)
+}
+allKeys = keys
+}
+
+// ---------- 绘制 ----------
+
+override fun onDraw(canvas: Canvas) {
+for (k in allKeys) {
+val r = k.rect
+if (r.isEmpty) continue
+bgPaint.color = when {
+k === pressedKey -> pressedColor
+k.isFunc -> funcBgColor
+else -> keyBgColor
+}
+canvas.drawRoundRect(r, cornerR, cornerR, bgPaint)
+labelPaint.textSize = if (k.isFunc) sp(16f) else sp(22f)
+labelPaint.color = keyTextColor
+val fm = labelPaint.fontMetrics
+canvas.drawText(k.label, r.centerX(), r.centerY() - (fm.ascent + fm.descent) / 2, labelPaint)
+}
+}
+
+// ---------- 触摸 ----------
+
+private var pressedKey: Key? = null
+
+private fun findKey(x: Float, y: Float): Key? =
+allKeys.firstOrNull { it.rect.contains(x, y)}
+
+override fun onTouchEvent(event: MotionEvent): Boolean {
+when (event.actionMasked) {
+MotionEvent.ACTION_DOWN -> {
+val k = findKey(event.x, event.y)?: return false
+pressedKey = k
+invalidate()
+performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+return true
+}
+MotionEvent.ACTION_UP -> {
+val k = pressedKey
+pressedKey = null
+invalidate()
+val up = findKey(event.x, event.y)
+if (k!= null && up === k) fireKey(k)
+return true
+}
+MotionEvent.ACTION_CANCEL -> {
+pressedKey = null
+invalidate()
+return true
+}
+}
+return super.onTouchEvent(event)
+}
+
+private fun fireKey(k: Key) {
+when (k.action) {
+Action.SYMBOL -> listener?.onSymbolKey(k.label)
+Action.BACKSPACE -> listener?.onBackspace()
+Action.ENTER -> listener?.onEnter()
+Action.SPACE -> listener?.onSpace()
+Action.ABC -> listener?.onBackToLetters()
+Action.PAGE -> {
+symbolPage = 1 - symbolPage
+requestLayout()
+invalidate()
+}
+Action.GOTO_DIGIT -> listener?.onGotoDigit()
+Action.GOTO_SYMBOL -> listener?.onGotoSymbol()
+}
+}
+}

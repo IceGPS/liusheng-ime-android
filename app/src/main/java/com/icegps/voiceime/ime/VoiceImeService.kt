@@ -16,6 +16,7 @@ import com.icegps.voiceime.ime.pinyin.CandidateBarView
 import com.icegps.voiceime.ime.pinyin.PinyinDictionary
 import com.icegps.voiceime.ime.pinyin.PinyinInputController
 import com.icegps.voiceime.ime.pinyin.ShuangpinMapper
+import com.icegps.voiceime.ime.pinyin.SymbolKeyboardView
 import com.icegps.voiceime.ime.pinyin.EngineAdapter
 import com.icegps.voiceime.ime.pinyin.PinyinKeyboardView
 import com.icegps.voiceime.service.Recorder
@@ -618,6 +619,12 @@ class VoiceImeService : InputMethodService() {
         }
         this.pinyinKeyboard = pinyinKeyboard
 
+        // 符号/数字键盘（默认隐藏，与拼音键盘互斥显示）
+        val symbolKeyboard = SymbolKeyboardView(ctx).apply {
+            visibility = View.GONE
+        }
+        this.symbolKeyboard = symbolKeyboard
+
         // 拼音输入控制器：键盘 / 候选栏事件 → InputConnection
         pinyinController = PinyinInputController(
             connectionProvider = { currentInputConnection },
@@ -625,6 +632,7 @@ class VoiceImeService : InputMethodService() {
             onToast = { msg -> toast(msg) },
         ).apply {
             attach(pinyinKeyboard, candidateBar)
+            attachSymbol(symbolKeyboard)
             // 接入真实引擎（词典 + 小鹤双拼，替代桩实现）
             setEngine(EngineAdapter(ctx))
             // 拼音键盘空格麦克风：按住录音、松开转写（与极简语音键盘同一套录音链路）
@@ -639,10 +647,11 @@ class VoiceImeService : InputMethodService() {
             }
         }
 
-        // 顺序：候选栏、语音模式、拼音键盘
+        // 顺序：候选栏、语音模式、拼音键盘、符号/数字键盘
         root.addView(candidateBar)
         root.addView(voiceBox)
         root.addView(pinyinKeyboard)
+        root.addView(symbolKeyboard)
 
         // 恢复上次的键盘模式
         if (Prefs.getKbMode(ctx) == Prefs.KB_PINYIN) {
@@ -659,11 +668,13 @@ class VoiceImeService : InputMethodService() {
     private var candidateBar: CandidateBarView? = null
     private var voiceBox: LinearLayout? = null
     private var pinyinKeyboard: PinyinKeyboardView? = null
+    private var symbolKeyboard: SymbolKeyboardView? = null
     private var pinyinController: PinyinInputController? = null
 
     /** 切换到拼音键盘（候选栏 + QWERTY），状态持久化 */
     private fun showPinyinKeyboard() {
         voiceBox?.visibility = View.GONE
+        symbolKeyboard?.visibility = View.GONE
         candidateBar?.visibility = View.VISIBLE
         pinyinKeyboard?.visibility = View.VISIBLE
         Prefs.setKbMode(this, Prefs.KB_PINYIN)
@@ -675,6 +686,7 @@ class VoiceImeService : InputMethodService() {
         currentInputConnection?.finishComposingText()
         pinyinController?.reset()
         pinyinKeyboard?.visibility = View.GONE
+        symbolKeyboard?.visibility = View.GONE
         candidateBar?.visibility = View.GONE
         voiceBox?.visibility = View.VISIBLE
         Prefs.setKbMode(this, Prefs.KB_VOICE)

@@ -22,6 +22,7 @@ class PinyinInputController(
     private var engine: PinyinEngine = StubPinyinEngine()
     private var keyboard: PinyinKeyboardView? = null
     private var bar: CandidateBarView? = null
+    private var symbolKeyboard: SymbolKeyboardView? = null
 
     /**
      * 替换拼音引擎（第二阶段：换成 RIME JNI / 纯 Kotlin 真实引擎实现）。
@@ -67,8 +68,8 @@ class PinyinInputController(
                 // Shift 视觉状态由键盘内部维护，这里无需额外动作
             }
             override fun onLangToggle() = toggleLang()
-            override fun onSymbolPage() = onToast("符号键盘第二阶段再做")
-            override fun onDigitPage() = onToast("数字键盘第二阶段再做")
+            override fun onSymbolPage() = showSymbolKeyboard()
+            override fun onDigitPage() = showDigitKeyboard()
             override fun onSpace() = handleSpace()
             override fun onVoiceMode() = switchToVoice()
             override fun onVoiceRecordStart() {
@@ -82,6 +83,57 @@ class PinyinInputController(
         bar.onCandidateClick = { selectCandidate(it) }
         bar.onExpandCandidates = { onExpandCandidates?.invoke() ?: expandCandidatePanel() }
         refresh()
+    }
+
+    /** 绑定符号/数字键盘 */
+    fun attachSymbol(symbolKeyboard: SymbolKeyboardView) {
+        this.symbolKeyboard = symbolKeyboard
+        symbolKeyboard.listener = object : SymbolKeyboardView.Listener {
+            // 点选后停留（可连打），不自动跳回字母键盘
+            override fun onSymbolKey(sym: String) = commitWithComposingFlushed(sym)
+            override fun onBackspace() = handleBackspace()
+            override fun onEnter() = handleEnter()
+            override fun onSpace() = handleSpace()
+            override fun onBackToLetters() = showLetterKeyboard()
+            override fun onGotoDigit() = showDigitKeyboard()
+            override fun onGotoSymbol() = showSymbolKeyboard()
+        }
+    }
+
+    /** 切到符号键盘：先把未完成拼音按首选上屏，再隐藏字母键盘/候选栏 */
+    fun showSymbolKeyboard() {
+        flushComposingAsFirstCandidate()
+        keyboard?.visibility = android.view.View.GONE
+        bar?.visibility = android.view.View.GONE
+        symbolKeyboard?.visibility = android.view.View.VISIBLE
+        symbolKeyboard?.showSymbol()
+    }
+
+    /** 切到数字键盘 */
+    fun showDigitKeyboard() {
+        flushComposingAsFirstCandidate()
+        keyboard?.visibility = android.view.View.GONE
+        bar?.visibility = android.view.View.GONE
+        symbolKeyboard?.visibility = android.view.View.VISIBLE
+        symbolKeyboard?.showDigit()
+    }
+
+    /** 回到字母键盘 */
+    fun showLetterKeyboard() {
+        symbolKeyboard?.visibility = android.view.View.GONE
+        keyboard?.visibility = android.view.View.VISIBLE
+        bar?.visibility = android.view.View.VISIBLE
+        refresh()
+    }
+
+    /** 把未完成拼音按首选上屏（不丢字），供模式切换前调用 */
+    private fun flushComposingAsFirstCandidate() {
+        val composing = engine.getComposingText()
+        if (composing.isNotEmpty()) {
+            val first = engine.selectCandidate(0) ?: composing
+            ic()?.commitText(first, 1)
+            engine.clear()
+        }
     }
 
     /**
