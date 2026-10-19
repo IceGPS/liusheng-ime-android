@@ -228,8 +228,10 @@ jobs:
           cp "$BUILD_DIR/classes.dex" "$BUILD_DIR/bundle/dex/"
           # AAB 里的 .so 按 Play 要求不压缩存放（APK 里为省体积用压缩存放，两者分开处理）
           cp "$STAGE/lib/arm64-v8a/"*.so "$BUILD_DIR/bundle/lib/arm64-v8a/"
+          # bundletool 要求 manifest 放在 manifest/ 子目录
+          mkdir -p "$BUILD_DIR/bundle/manifest" && mv "$BUILD_DIR/bundle/AndroidManifest.xml" "$BUILD_DIR/bundle/manifest/"
 
-          (cd "$BUILD_DIR/bundle" && zip -q -r "$BUILD_DIR/base.zip" AndroidManifest.xml resources.pb res assets dex)
+          (cd "$BUILD_DIR/bundle" && zip -q -r "$BUILD_DIR/base.zip" manifest resources.pb res assets dex)
           (cd "$BUILD_DIR/bundle" && zip -q -0 -r "$BUILD_DIR/base.zip" lib)
 
           "$JAVA_HOME/bin/java" -jar "$BUNDLETOOL_JAR" build-bundle \
