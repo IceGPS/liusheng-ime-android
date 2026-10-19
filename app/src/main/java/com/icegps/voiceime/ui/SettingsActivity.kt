@@ -61,6 +61,14 @@ class SettingsActivity : Activity() {
         }
         setContentView(ScrollView(this).apply { addView(root) })
 
+        // ---------- 标题 ----------
+        root.addView(TextView(this).apply {
+            text = "留声离线语音输入法"
+            textSize = 20f
+            setTextColor(Color.BLACK)
+            setPadding(0, 0, 0, dp(8))
+        })
+
         // ---------- 转写引擎 ----------
         root.addView(sectionTitle("转写引擎"))
         engineGroup = RadioGroup(this).apply {
