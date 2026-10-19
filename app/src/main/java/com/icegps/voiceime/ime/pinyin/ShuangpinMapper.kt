@@ -42,6 +42,14 @@ object ShuangpinMapper {
         buildReverseMap()
     }
 
+    /**
+     * 预热：输入法启动时后台调用，提前建好反查表，
+     * 避免首次双拼输入时懒加载卡顿。
+     */
+    fun warmUp() {
+        keyPairToSyllables.size
+    }
+
     private fun buildReverseMap(): Map<String, List<String>> {
         val result = HashMap<String, MutableList<String>>()
         // 所有合法声母

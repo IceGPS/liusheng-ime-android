@@ -15,6 +15,7 @@ import android.widget.Toast
 import com.icegps.voiceime.ime.pinyin.CandidateBarView
 import com.icegps.voiceime.ime.pinyin.PinyinDictionary
 import com.icegps.voiceime.ime.pinyin.PinyinInputController
+import com.icegps.voiceime.ime.pinyin.ShuangpinMapper
 import com.icegps.voiceime.ime.pinyin.EngineAdapter
 import com.icegps.voiceime.ime.pinyin.PinyinKeyboardView
 import com.icegps.voiceime.service.Recorder
@@ -42,16 +43,27 @@ class VoiceImeService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        // 预热拼音词典（27MB 二进制，懒加载要 1-2 秒）：
-        // 输入法启动时后台线程提前载入，单例加载完后拼音引擎直接复用，
-        // 用户第一次按字母键不再等待。失败也不影响：届时仍会懒加载。
+        // 启动时积极加载所有重组件（不用懒加载）：后台线程按优先级顺序预热，
+        // 强引用占住内存，避免 GC 释放后再次懒加载卡顿。
+        // 顺序：拼音词典（27MB）→ 双拼映射表 → 语音模型（~230MB，局域网模式跳过）。
         Thread {
             try {
                 PinyinDictionary.get(this)
-            } catch (e: Exception) {
-                // 忽略
+            } catch (_: Exception) {
             }
-        }.apply { isDaemon = true }.start()
+            try {
+                ShuangpinMapper.warmUp()
+            } catch (_: Exception) {
+            }
+            try {
+                if (com.icegps.voiceime.util.Prefs.getEngine(this) !=
+                    com.icegps.voiceime.util.Prefs.ENGINE_LAN_ONLY
+                ) {
+                    sherpaBackend().warmUp()
+                }
+            } catch (_: Exception) {
+            }
+        }.apply { isDaemon = true; name = "ime-warmup" }.start()
     }
 
     private val uiHandler = Handler(Looper.getMainLooper())

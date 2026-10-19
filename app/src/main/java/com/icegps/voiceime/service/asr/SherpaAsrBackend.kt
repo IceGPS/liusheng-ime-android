@@ -187,6 +187,21 @@ class SherpaAsrBackend(private val appCtx: Context) : AsrBackend {
         return isModelReady(appCtx)
     }
 
+    /**
+     * 预热：在后台线程提前把 ~230MB 模型载入内存，并用 recognizer
+     * 强引用占住（避免 GC 释放），首次语音输入不再现载卡顿。
+     * 模型未下载时静默跳过（不 toast、不抛异常）。
+     */
+    fun warmUp() {
+        try {
+            if (!isAvailable()) return
+            ensureInit()
+            Log.i(TAG, "[sherpa] warm-up done")
+        } catch (e: Exception) {
+            Log.w(TAG, "[sherpa] warm-up failed: ${e.message}")
+        }
+    }
+
     @Throws(Exception::class)
     private fun ensureInit(): OfflineRecognizer {
         synchronized(initLock) {
