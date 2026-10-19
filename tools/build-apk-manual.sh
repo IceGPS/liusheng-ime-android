@@ -13,7 +13,7 @@
 # 用法：
 #   tools/build-apk-manual.sh <输出APK路径>
 # 示例：
-#   tools/build-apk-manual.sh dist/voice-ime-android-v2.apk
+#   tools/build-apk-manual.sh dist/liusheng-ime-android-v2.apk
 set -euo pipefail
 
 OUT_APK="${1:?用法: $0 <输出APK路径>}"

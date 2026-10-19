@@ -2,7 +2,7 @@
 #
 # 云端 NDK 构建：编译 MNN arm64 运行时 + JNI bridge，打出带端侧转写的 APK。
 #
-# 背景：V2 的纯 Kotlin APK（dist/voice-ime-android-v2.apk）不含 native 库，
+# 背景：V2 的纯 Kotlin APK（dist/liusheng-ime-android-v2.apk）不含 native 库，
 # 真机上 MnnAsrBackend 会降级到局域网。本 workflow 在 GitHub runner 上完成：
 #   1. 从源码编译 MNN（arm64-v8a，LLM + audio，CPU only）得到 libMNN.so
 #   2. 用 NDK 编译 app/src/main/cpp/mnn_asr_bridge.cpp 得到 libvoiceime_mnn.so
@@ -205,16 +205,16 @@ jobs:
 
           echo "== 输出产物"
           mkdir -p "$PROJ_DIR/dist" "$PROJ_DIR/dist/native-libs/arm64-v8a"
-          cp "$BUILD_DIR/signed.apk" "$PROJ_DIR/dist/voice-ime-android-v2.apk"
+          cp "$BUILD_DIR/signed.apk" "$PROJ_DIR/dist/liusheng-ime-android-v2.apk"
           cp "$STAGE/lib/arm64-v8a/"*.so "$PROJ_DIR/dist/native-libs/arm64-v8a/"
-          "$BT/aapt" dump badging "$PROJ_DIR/dist/voice-ime-android-v2.apk" | head -2
-          unzip -l "$PROJ_DIR/dist/voice-ime-android-v2.apk" | grep -E "lib/arm64|classes.dex"
+          "$BT/aapt" dump badging "$PROJ_DIR/dist/liusheng-ime-android-v2.apk" | head -2
+          unzip -l "$PROJ_DIR/dist/liusheng-ime-android-v2.apk" | grep -E "lib/arm64|classes.dex"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: voice-ime-android-v2-ndk
+          name: liusheng-ime-android-v2-ndk
           path: |
-            dist/voice-ime-android-v2.apk
+            dist/liusheng-ime-android-v2.apk
             dist/native-libs/arm64-v8a/*.so
           if-no-files-found: error

@@ -1,7 +1,7 @@
 # 留声输入法（Liusheng）Android 项目总结文档
 
 > 版本：V31（2026-10-13）
-> 仓库：https://github.com/IceGPS/voice-ime-android
+> 仓库：https://github.com/IceGPS/liusheng-ime-android
 > 目标读者：未来接手维护/升级的开发者
 
 ---
@@ -241,7 +241,7 @@ but assetManager is NOT set to null.
 ## 七、关键联系人 & 资源
 
 - **用户/测试**：Hongjie（小米 MIX FOLD 4，Snapdragon 8 Gen 3，16GB RAM）
-- **Android 仓库**：https://github.com/IceGPS/voice-ime-android
+- **Android 仓库**：https://github.com/IceGPS/liusheng-ime-android
 - **Windows 仓库**：https://github.com/IceGPS/CapsWriter-Offline
 - **模型**：sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17（INT8）
 - **签名**：`~/.voice-ime-debug.keystore`（固定，勿换）

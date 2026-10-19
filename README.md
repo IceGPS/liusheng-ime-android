@@ -26,7 +26,7 @@
 
 ### 安装
 
-1. 从 GitHub Release 或 `dist/` 拿最新 `voice-ime-android-v*.apk` 传到手机
+1. 从 GitHub Release 或 `dist/` 拿最新 `liusheng-ime-android-v*.apk` 传到手机
 2. 点击安装（允许"安装未知应用"），**安装后核对文件大小**（见 Release 说明）
 3. 打开 App，按引导完成：麦克风权限 → 启用输入法 → 切换到留声输入法
 4. 首次使用拼音键盘时词库已内置，无需下载；语音模型（约 230MB）在设置页下载一次即可
@@ -188,7 +188,7 @@ FATAL 行会直接告诉你答案。
 
 ```bash
 export JAVA_HOME=<jdk17> ANDROID_HOME=~/android-sdk KOTLINC_HOME=<kotlinc>
-tools/build-apk-manual.sh dist/voice-ime-android-vX.apk
+tools/build-apk-manual.sh dist/liusheng-ime-android-vX.apk
 # 自动完成：aapt2 编译资源（含 assets 词库）→ kotlinc 编译 → d8 dex → 对齐 → apksigner 签名
 ```
 
