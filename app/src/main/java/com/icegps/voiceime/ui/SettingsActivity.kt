@@ -57,7 +57,7 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(20))
+            setPadding(dp(20), dp(44), dp(20), dp(20))
         }
         setContentView(ScrollView(this).apply { addView(root) })
 

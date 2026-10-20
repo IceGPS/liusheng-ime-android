@@ -37,7 +37,7 @@ class UserDictActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(16))
+            setPadding(dp(16), dp(36), dp(16), dp(16))
         }
 
         root.addView(TextView(this).apply {

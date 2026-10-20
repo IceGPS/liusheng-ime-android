@@ -33,7 +33,7 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(20))
+            setPadding(dp(20), dp(44), dp(20), dp(20))
         }
         val scroll = ScrollView(this).apply { addView(root) }
 
