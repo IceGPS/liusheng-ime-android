@@ -7,6 +7,8 @@ import android.util.AttributeSet
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.View.MeasureSpec
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.PopupWindow
@@ -40,6 +42,7 @@ class ClipPanelView @JvmOverloads constructor(
     private val rowsContainer: LinearLayout
     private val scrollView: ScrollView
     private val emptyView: TextView
+    private val titleView: TextView
 
     private val isDark = (resources.configuration.uiMode and
         Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -54,15 +57,55 @@ class ClipPanelView @JvmOverloads constructor(
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     /**
-     * 面板高度上限（屏幕高度的一半）：无论内容多长都不撑爆 IME 输入窗口（V75）。
-     * 内部 ScrollView 会在剩余空间内滚动。
+     * 面板高度上限 = 父容器（输入视图 root）的真实可用高度（V77）。
+     *
+     * V75/V76 用「屏幕高度 50%」做上限，有两个问题：
+     * 1. heightPixels 是整块物理屏高，IME 窗口真正可见的高度更小；
+     *    面板高度 + 52dp 候选栏会超过窗口可见区，底部被窗口裁掉。
+     * 2. clamp 在 super.onMeasure 之后用 setMeasuredDimension 硬改，
+     *    ScrollView 已按未截断的高度量完，视口比实际可见区大，
+     *    滚到底最后一条也露不全（真机报障：上滑只能露出一点点）。
+     *
+     * 改法：上限取父容器上次布局的实测高度（键盘模式下窗口已证明能
+     * 完整显示的高度），减去父容器纵向 padding 与其它 VISIBLE 兄弟
+     * （候选栏）的实测高度——即面板替换掉的键盘区高度；超限时用
+     * EXACTLY 上限重新 measure 一次，让 ScrollView 按最终高度量准。
      */
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-        val maxH = (resources.displayMetrics.heightPixels * MAX_HEIGHT_FRACTION).toInt()
-        if (measuredHeight > maxH) {
-            setMeasuredDimension(measuredWidth, maxH)
+        val maxH = availableHeightCap(heightMeasureSpec)
+        if (maxH > 0 && measuredHeight > maxH) {
+            super.onMeasure(
+                widthMeasureSpec,
+                MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.EXACTLY),
+            )
         }
+    }
+
+    /**
+     * 面板可占的最大高度。
+     * 优先：父容器实测高度 − 纵向 padding − VISIBLE 兄弟实测高度。
+     * 兜底：父给的高度 spec 大小（窗口的 AT_MOST 约束，已扣兄弟占用）。
+     * 都拿不到返回 0（不限制）。
+     */
+    private fun availableHeightCap(heightMeasureSpec: Int): Int {
+        val parentView = parent as? View
+        if (parentView != null && parentView.measuredHeight > 0) {
+            var cap = parentView.measuredHeight -
+                parentView.paddingTop - parentView.paddingBottom
+            val group = parentView as? ViewGroup
+            if (group != null) {
+                for (i in 0 until group.childCount) {
+                    val child = group.getChildAt(i)
+                    if (child !== this && child.visibility == View.VISIBLE) {
+                        cap -= child.measuredHeight
+                    }
+                }
+            }
+            if (cap > 0) return cap
+        }
+        val specSize = MeasureSpec.getSize(heightMeasureSpec)
+        return if (specSize > 0) specSize else 0
     }
 
     init {
@@ -70,15 +113,15 @@ class ClipPanelView @JvmOverloads constructor(
         setBackgroundColor(panelBg)
         setPadding(dp(8), dp(4), dp(8), dp(4))
 
-        // 顶部标题
-        val title = TextView(context).apply {
+        // 顶部标题（带总条数，refresh 时更新，V77）
+        titleView = TextView(context).apply {
             text = "剪贴板历史"
             textSize = 14f
             setTextColor(hintColor)
             gravity = Gravity.CENTER
             setPadding(0, dp(4), 0, dp(4))
         }
-        addView(title, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(titleView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         // 空状态
         emptyView = TextView(context).apply {
@@ -133,13 +176,15 @@ class ClipPanelView @JvmOverloads constructor(
     /** 重建列表（打开面板时、历史变化时调用） */
     fun refresh() {
         rowsContainer.removeAllViews()
+        // 标题带总条数（V77）：便于核对显示条数与实际存储是否一致
+        val entries = ClipStore.list()
+        titleView.text = "剪贴板历史 · 共 ${entries.size} 条"
         if (featureDisabledHint) {
             emptyView.text = "剪贴板历史未开启\n请在留声设置中开启后使用"
             showEmpty()
             return
         }
         // 展示全部历史（DB 上限 50 条，V76）；面板限高 + 内部滚动
-        val entries = ClipStore.list()
         if (entries.isEmpty()) {
             emptyView.text = "暂无剪贴板历史\n在任意应用中复制文本后会自动记录"
             showEmpty()
@@ -252,8 +297,4 @@ class ClipPanelView @JvmOverloads constructor(
         return "${day / 30}个月前"
     }
 
-    companion object {
-        /** 面板高度上限占屏幕高度的比例（V75 引入，V76 配合内部滚动展示全部条目） */
-        private const val MAX_HEIGHT_FRACTION = 0.5f
-    }
 }
