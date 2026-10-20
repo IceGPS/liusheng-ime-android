@@ -42,7 +42,6 @@ class ClipPanelView @JvmOverloads constructor(
     private val rowsContainer: LinearLayout
     private val scrollView: ScrollView
     private val emptyView: TextView
-    private val titleView: TextView
 
     private val isDark = (resources.configuration.uiMode and
         Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -113,15 +112,8 @@ class ClipPanelView @JvmOverloads constructor(
         setBackgroundColor(panelBg)
         setPadding(dp(8), dp(4), dp(8), dp(4))
 
-        // 顶部标题（带总条数，refresh 时更新，V77）
-        titleView = TextView(context).apply {
-            text = "剪贴板历史"
-            textSize = 14f
-            setTextColor(hintColor)
-            gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        addView(titleView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        // 标题行已移到候选栏显示（V78）：面板内不再单独占一行，
+        // 腾出的高度多显示一条历史条目
 
         // 空状态
         emptyView = TextView(context).apply {
@@ -176,9 +168,8 @@ class ClipPanelView @JvmOverloads constructor(
     /** 重建列表（打开面板时、历史变化时调用） */
     fun refresh() {
         rowsContainer.removeAllViews()
-        // 标题带总条数（V77）：便于核对显示条数与实际存储是否一致
+        // 总条数由候选栏的面板模式标题显示（V78），本面板只管列表
         val entries = ClipStore.list()
-        titleView.text = "剪贴板历史 · 共 ${entries.size} 条"
         if (featureDisabledHint) {
             emptyView.text = "剪贴板历史未开启\n请在留声设置中开启后使用"
             showEmpty()

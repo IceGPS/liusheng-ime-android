@@ -29,6 +29,8 @@ class PinyinInputController(
     private val clipStoreListener: () -> Unit = {
         if (clipPanel?.visibility == android.view.View.VISIBLE) {
             clipPanel?.refresh()
+            // V78：标题在候选栏，条数变化时同步更新
+            bar?.setClipPanelTitle(com.icegps.voiceime.service.clip.ClipStore.list().size)
         }
     }
 
@@ -125,10 +127,14 @@ class PinyinInputController(
         keyboard?.visibility = android.view.View.GONE
         symbolKeyboard?.visibility = android.view.View.GONE
         panel.visibility = android.view.View.VISIBLE
+        // V78：标题移到候选栏（候选区此时空着，本来就放标题），面板内腾出一行多显示一条
+        bar?.setClipPanelTitle(com.icegps.voiceime.service.clip.ClipStore.list().size)
+        bar?.setClipPanelMode(true)
     }
 
     private fun hideClipPanel() {
         clipPanel?.visibility = android.view.View.GONE
+        bar?.setClipPanelMode(false) // V78：候选栏恢复正常候选显示
         // 面板只在拼音模式下可开，关闭后回到字母键盘
         if (symbolKeyboard?.visibility != android.view.View.VISIBLE) {
             keyboard?.visibility = android.view.View.VISIBLE

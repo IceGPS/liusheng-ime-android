@@ -20,7 +20,7 @@ import android.widget.TextView
  *
  * 布局（横向单行，高度固定 52dp，对齐搜狗输入法，不随输入状态变化）：
  * - 左：🎤 按钮，点按进入留声输入法设置界面
- * - 中：横向滚动候选词列表
+ * - 中：横向滚动候选词列表（剪贴板面板打开时改为显示"剪贴板历史 · 共 N 条"，V78）
  * - 右：三个独立键（V70）：📋 打开剪贴板面板、中/英切换、">" 展开浮层候选面板
  *
  * 拼音小耳朵：悬浮气泡（仿搜狗），浮在候选栏左上方，不占栏内横向空间；
@@ -58,9 +58,17 @@ class CandidateBarView @JvmOverloads constructor(
     var onExpandCandidates: (() -> Unit)? = null
 
     private val candidatesRow: LinearLayout
+    private val candidatesScroll: HorizontalScrollView
     private val expandBtn: TextView
     private val clipBtn: TextView
     private val langBtn: TextView
+
+    /**
+     * 剪贴板面板模式标题（V78）：面板打开时在候选区中央显示"剪贴板历史 · 共 N 条"
+     * （原在面板内部单独占一行，移到候选栏后腾出的高度可多显示一条历史）。
+     * 与 candidatesScroll 共用权重 1 槽位，互斥 VISIBLE/GONE，布局互不挤占。
+     */
+    private val clipTitleView: TextView
 
     /** 拼音小耳朵悬浮气泡 */
     private var earPopup: PopupWindow? = null
@@ -101,7 +109,7 @@ class CandidateBarView @JvmOverloads constructor(
         addView(settingsBtn, LayoutParams(dp(52), LayoutParams.MATCH_PARENT))
 
         // 中：横向滚动候选词
-        val scroll = HorizontalScrollView(context).apply {
+        candidatesScroll = HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
             // 右边缘渐隐：提示后面还有更多候选词
             isHorizontalFadingEdgeEnabled = true
@@ -111,11 +119,22 @@ class CandidateBarView @JvmOverloads constructor(
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        scroll.addView(
+        candidatesScroll.addView(
             candidatesRow,
             LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT),
         )
-        addView(scroll, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        addView(candidatesScroll, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+
+        // 中：剪贴板面板模式标题（V78）：面板打开时替换候选滚动区显示，
+        // 初始 GONE；与滚动区同一权重槽位，互斥显示
+        clipTitleView = TextView(context).apply {
+            textSize = 14f
+            setTextColor(hintColor)
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            isFocusable = false
+        }
+        addView(clipTitleView, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
 
         // 右：剪贴板（V69）：点击打开剪贴板历史面板。
         // V70：拆为独立键（不再长按切语言，避免热区混淆）。
@@ -174,6 +193,26 @@ class CandidateBarView @JvmOverloads constructor(
         langBtn.text = if (isChinese) "中" else "英"
         // 高亮当前：中文用蓝色，英文用灰色（与拼音键盘原中/英键一致）
         langBtn.setTextColor(if (isChinese) 0xFF007AFF.toInt() else hintColor)
+    }
+
+    /**
+     * 剪贴板面板模式开关（V78）：面板打开时候选区中央显示"剪贴板历史 · 共 N 条"
+     * （标题原在面板内部单独占一行，移到候选栏后腾出的高度多显示一条历史条目）；
+     * 面板关闭时恢复正常候选滚动区。两侧 🎤/📋/中/>/">" 按钮不受影响。
+     */
+    fun setClipPanelMode(showing: Boolean) {
+        if (showing) {
+            candidatesScroll.visibility = View.GONE
+            clipTitleView.visibility = View.VISIBLE
+        } else {
+            clipTitleView.visibility = View.GONE
+            candidatesScroll.visibility = View.VISIBLE
+        }
+    }
+
+    /** 更新剪贴板面板标题的总条数（面板打开时、历史变化时调用） */
+    fun setClipPanelTitle(total: Int) {
+        clipTitleView.text = "剪贴板历史 · 共 $total 条"
     }
 
     /**
