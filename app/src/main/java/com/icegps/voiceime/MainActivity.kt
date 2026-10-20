@@ -38,7 +38,7 @@ class MainActivity : Activity() {
         val scroll = ScrollView(this).apply { addView(root) }
 
         root.addView(titleView("留声离线语音输入法"))
-        root.addView(descView("🎤 按住说话，松开上屏\n⌫ 退格删除\n🌐 一键切回原输入法"))
+        root.addView(descView("🎤 按住说话，松开上屏\n⌫ 退格删除"))
         root.addView(descView(
             "版本：${BuildInfo.VERSION_NAME} (${BuildInfo.VERSION_CODE})\n" +
             "构建：${BuildInfo.BUILD_DATE}\n" +
