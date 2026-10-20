@@ -50,6 +50,17 @@ fun onVoiceRecordStop()
 
 var listener: Listener? = null
 
+/** V81：回车键标签（由 Service 按 EditorInfo.imeOptions 下发：搜索/前往/发送等；无动作时为 ⏎）。
+ * 键面文字在 layoutKeys/bottomRow 时生成，故变更时需重新布局 */
+var enterLabel: String = "⏎"
+    set(value) {
+        if (field != value) {
+            field = value
+            requestLayout()
+            invalidate()
+        }
+    }
+
 /** 中文 / 英文模式（跟随控制器 toggleLang；决定 。/， 键输出全角/半角） */
 var isChineseMode: Boolean = true
     set(value) {
@@ -139,7 +150,7 @@ Key("123", 1.0f, Action.DIGIT_KEY, true, dimmed = (mode == Mode.DIGIT)),
 Key("", 2.8f, Action.SPACE, true),
 Key(if (isChineseMode) "。" else ".", 1.0f, Action.PUNCT, true),
 Key("⌫", 1.2f, Action.BACKSPACE, true),
-Key("⏎", 1.4f, Action.ENTER, true),
+Key(enterLabel, 1.4f, Action.ENTER, true),
 )
 
 // ---------- 配色（与 PinyinKeyboardView 一致，跟随系统深浅色） ----------

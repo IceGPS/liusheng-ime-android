@@ -1,5 +1,6 @@
 package com.icegps.voiceime.ime.pinyin
 
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 
 /**
@@ -11,7 +12,8 @@ import android.view.inputmethod.InputConnection
  * - 拼音组合文本用 setComposingText 显示（下划线预编辑区）
  * - 选中候选词用 commitText 上屏
  * - 退格：有组合文本时先删拼音，无组合文本时 deleteSurroundingText
- * - 回车：有组合文本时原样上屏拼音字母（不做汉字转换）；无组合文本时 commitText("\n")
+ * - 回车：有组合文本时原样上屏拼音字母（不做汉字转换，也不触发编辑器动作）；
+ *   无组合文本时，若编辑器声明了动作（搜索/发送等，V81）则 performEditorAction，否则换行
  * - 空格：有组合文本时选首选；无组合文本时输入空格
  */
 class PinyinInputController(
@@ -46,6 +48,13 @@ class PinyinInputController(
     /** 中文 / 英文模式（对应键盘“中/英”键），默认中文 */
     var isChinese = true
         private set
+
+    /**
+     * V81：当前编辑器声明的回车动作（由 VoiceImeService 在 onStartInput 时下发，
+     * 已处理 IME_FLAG_NO_ENTER_ACTION）；[EditorInfo.IME_ACTION_NONE] 表示无动作、回车走换行。
+     * 仅在无拼音组合文本时生效——组合态回车永远上屏原始拼音字母。
+     */
+    var editorAction: Int = EditorInfo.IME_ACTION_NONE
 
     /**
      * 点候选栏右端 ">" 时触发；为 null 时使用默认的浮层面板实现。
@@ -322,8 +331,14 @@ class PinyinInputController(
             engine.clear()
             refresh()
         } else {
-            engine.breakWordChain() // 直接上屏换行，打断造词链
-            ic()?.commitText("\n", 1)
+            engine.breakWordChain() // 直接上屏，打断造词链
+            val action = editorAction
+            if (action != EditorInfo.IME_ACTION_NONE) {
+                // V81：编辑器声明了回车动作（搜索/前往/发送/完成/下一项/上一项）→ 执行动作，不插入换行
+                ic()?.performEditorAction(action)
+            } else {
+                ic()?.commitText("\n", 1)
+            }
             refresh()
         }
     }

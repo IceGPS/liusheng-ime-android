@@ -88,6 +88,15 @@ class PinyinKeyboardView @JvmOverloads constructor(
             }
         }
 
+    /** V81：回车键标签（由 Service 按 EditorInfo.imeOptions 下发：搜索/前往/发送等；无动作时为 ⏎） */
+    var enterLabel: String = "⏎"
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
+
     // ---------- 按键模型 ----------
 
     private enum class Action {
@@ -330,10 +339,11 @@ class PinyinKeyboardView @JvmOverloads constructor(
                 val cy = if (k.hint != null) r.centerY() + dp(5) else r.centerY()
                 // 字母键跟随 Caps Lock 状态显示大小写
                 val raw = if (k.action == Action.LETTER && !capsLock) k.label.lowercase() else k.label
-                // 逗号/句号键面按中英文状态显示全角/半角
+                // 逗号/句号键面按中英文状态显示全角/半角；回车键面跟随编辑器动作（V81）
                 val label = when (k.action) {
                     Action.COMMA -> SymbolWidth.of(',', isChineseMode).toString()
                     Action.PERIOD -> SymbolWidth.of('.', isChineseMode).toString()
+                    Action.ENTER -> enterLabel
                     else -> raw
                 }
                 canvas.drawText(

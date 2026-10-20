@@ -6,6 +6,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -42,7 +43,7 @@ import kotlin.math.abs
  *    松开转写上屏（走系统 commitText，光标天然正确）
  *  - 。：点按=句号，上滑=逗号（固定全角，与语音转写输出一致）
  *  - ⌫ 点按删一个字符，长按连续删除
- *  - ⏎ 回车换行
+ *  - ⏎ 回车：V81 起自适应编辑器动作（键面随输入框变：搜索/前往/发送…），无动作时换行
  *
  * 转写复用现有后端（局域网 / 端侧 MNN），与悬浮球同一套逻辑。
  */
@@ -372,7 +373,8 @@ class VoiceImeService : InputMethodService() {
 
         // （V67 统一底行：🌐 退役，长按 ABC 键调系统输入法选择器代替）
 
-        // 回车键：换行（放最右）
+        // 回车键：V81 自适应——编辑器声明了动作（搜索/前往/发送等）时键面显示动作名、
+        // 按下执行 performEditorAction；无动作时显示 ⏎、按下换行（极简键盘无拼音组合态）
         val enterBtn = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
             text = "⏎"
@@ -380,12 +382,13 @@ class VoiceImeService : InputMethodService() {
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1.4f)
         }
+        this.enterBtn = enterBtn
         enterBtn.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    currentInputConnection?.commitText("\n", 1)
+                    handleEnterKey()
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -567,6 +570,9 @@ class VoiceImeService : InputMethodService() {
             showVoiceKeyboard()
         }
 
+        // V81：视图（重）建后把当前回车动作标签同步到四套键盘
+        applyEditorAction()
+
         return root
     }
 
@@ -614,6 +620,80 @@ class VoiceImeService : InputMethodService() {
     }
 
     private var voiceBtn: Button? = null
+
+    /** 极简键盘回车键（V81 自适应标签需要持有引用） */
+    private var enterBtn: Button? = null
+
+    /** V81：当前编辑器声明的回车动作（onStartInput/View 时按 EditorInfo 计算并下发） */
+    private var editorAction: Int = EditorInfo.IME_ACTION_NONE
+
+    // ---------- V81：回车键自适应动作（对齐搜狗：键面随输入框声明的动作变） ----------
+
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        updateEditorAction(attribute)
+    }
+
+    override fun onStartInputView(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(attribute, restarting)
+        updateEditorAction(attribute)
+    }
+
+    private fun updateEditorAction(attribute: EditorInfo?) {
+        editorAction = computeEditorAction(attribute)
+        applyEditorAction()
+    }
+
+    /**
+     * 从 EditorInfo.imeOptions 算回车动作：
+     * 带 IME_FLAG_NO_ENTER_ACTION 时一律视为无动作（App 明确要求普通回车）；
+     * 只认 搜索/前往/发送/完成/下一项/上一项，其余（NONE/UNSPECIFIED）视为无动作。
+     */
+    private fun computeEditorAction(attribute: EditorInfo?): Int {
+        val opts = attribute?.imeOptions ?: return EditorInfo.IME_ACTION_NONE
+        if (opts and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0) {
+            return EditorInfo.IME_ACTION_NONE
+        }
+        return when (val a = opts and EditorInfo.IME_MASK_ACTION) {
+            EditorInfo.IME_ACTION_SEARCH, EditorInfo.IME_ACTION_GO,
+            EditorInfo.IME_ACTION_SEND, EditorInfo.IME_ACTION_DONE,
+            EditorInfo.IME_ACTION_NEXT, EditorInfo.IME_ACTION_PREVIOUS -> a
+            else -> EditorInfo.IME_ACTION_NONE
+        }
+    }
+
+    private fun enterLabelFor(action: Int): String = when (action) {
+        EditorInfo.IME_ACTION_SEARCH -> "搜索"
+        EditorInfo.IME_ACTION_GO -> "前往"
+        EditorInfo.IME_ACTION_SEND -> "发送"
+        EditorInfo.IME_ACTION_DONE -> "完成"
+        EditorInfo.IME_ACTION_NEXT -> "下一项"
+        EditorInfo.IME_ACTION_PREVIOUS -> "上一项"
+        else -> "⏎"
+    }
+
+    /** 把当前回车动作下发到四套键盘（极简 Button + 拼音/符号视图 + 控制器） */
+    private fun applyEditorAction() {
+        val label = enterLabelFor(editorAction)
+        enterBtn?.let {
+            it.text = label
+            // ⏎ 用原字号；文字标签（如“下一项”3 字）略缩小防溢出
+            it.textSize = if (label == "⏎") 22f else 18f
+        }
+        pinyinKeyboard?.enterLabel = label
+        symbolKeyboard?.enterLabel = label
+        pinyinController?.editorAction = editorAction
+    }
+
+    /** 极简键盘回车：有编辑器动作时执行动作，否则换行（极简键盘无拼音组合态） */
+    private fun handleEnterKey() {
+        val ic = currentInputConnection ?: return
+        if (editorAction != EditorInfo.IME_ACTION_NONE) {
+            ic.performEditorAction(editorAction)
+        } else {
+            ic.commitText("\n", 1)
+        }
+    }
 
     /** 语音按钮原始背景色（录音时变红提示，结束后恢复） */
     private var voiceBtnOrigBgColor: Int = 0
