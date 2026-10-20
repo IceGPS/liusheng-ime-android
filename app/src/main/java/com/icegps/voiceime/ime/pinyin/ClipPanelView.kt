@@ -52,6 +52,18 @@ class ClipPanelView @JvmOverloads constructor(
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+    /**
+     * 面板高度上限（屏幕高度的一半）：无论内容多长都不撑爆 IME 输入窗口（V75）。
+     * 内部 ScrollView 会在剩余空间内滚动。
+     */
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val maxH = (resources.displayMetrics.heightPixels * MAX_HEIGHT_FRACTION).toInt()
+        if (measuredHeight > maxH) {
+            setMeasuredDimension(measuredWidth, maxH)
+        }
+    }
+
     init {
         orientation = VERTICAL
         setBackgroundColor(panelBg)
@@ -124,7 +136,9 @@ class ClipPanelView @JvmOverloads constructor(
             showEmpty()
             return
         }
-        val entries = ClipStore.list()
+        // 展示层只取最近 5 条（置顶优先、其次最新，与 ClipStore.list() 排序一致）；
+        // DB 仍存满 50 条，这里不删数据（V75）。
+        val entries = ClipStore.list().take(MAX_VISIBLE_ENTRIES)
         if (entries.isEmpty()) {
             emptyView.text = "暂无剪贴板历史\n在任意应用中复制文本后会自动记录"
             showEmpty()
@@ -156,8 +170,10 @@ class ClipPanelView @JvmOverloads constructor(
             text = entry.text
             textSize = 16f
             setTextColor(textColor)
+            // 强制最多 2 行（宽度显式 MATCH_PARENT，保证多段长文本也被 ellipsize 压住，V75）
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         }
         val sourceLabel = if (entry.source == ClipStore.SOURCE_LOCAL) "本机" else "来自 ${entry.source}"
         val metaTv = TextView(context).apply {
@@ -165,6 +181,9 @@ class ClipPanelView @JvmOverloads constructor(
             textSize = 12f
             setTextColor(hintColor)
             setPadding(0, dp(2), 0, 0)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         }
         row.addView(textTv)
         row.addView(metaTv)
@@ -229,5 +248,13 @@ class ClipPanelView @JvmOverloads constructor(
         if (day == 1L) return "昨天"
         if (day < 30) return "${day}天前"
         return "${day / 30}个月前"
+    }
+
+    companion object {
+        /** 面板最多显示的条数（DB 上限仍是 50，只限制展示，V75） */
+        private const val MAX_VISIBLE_ENTRIES = 5
+
+        /** 面板高度上限占屏幕高度的比例（V75） */
+        private const val MAX_HEIGHT_FRACTION = 0.5f
     }
 }
