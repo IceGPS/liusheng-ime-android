@@ -173,6 +173,7 @@ class PinyinInputController(
 
     /** 切到符号键盘：先把未完成拼音按首选上屏，再隐藏字母键盘/候选栏 */
     fun showSymbolKeyboard() {
+        if (isClipPanelShowing()) hideClipPanel() // V82：面板开着时切键盘先收面板，避免两块同时占位
         flushComposingAsFirstCandidate()
         keyboard?.visibility = android.view.View.GONE
         bar?.visibility = android.view.View.GONE
@@ -182,6 +183,7 @@ class PinyinInputController(
 
     /** 切到数字键盘 */
     fun showDigitKeyboard() {
+        if (isClipPanelShowing()) hideClipPanel() // V82：同 showSymbolKeyboard
         flushComposingAsFirstCandidate()
         keyboard?.visibility = android.view.View.GONE
         bar?.visibility = android.view.View.GONE

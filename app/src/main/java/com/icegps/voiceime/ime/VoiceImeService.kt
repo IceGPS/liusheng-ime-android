@@ -573,6 +573,9 @@ class VoiceImeService : InputMethodService() {
         // V81：视图（重）建后把当前回车动作标签同步到四套键盘
         applyEditorAction()
 
+        // V82：视图重建（如折叠开合/旋转）后，若当前是数字/电话字段，恢复数字键盘
+        if (digitFieldActive) enterDigitMode()
+
         return root
     }
 
@@ -632,11 +635,13 @@ class VoiceImeService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         updateEditorAction(attribute)
+        updateFieldType(attribute) // V82：按输入框类型自动切键盘
     }
 
     override fun onStartInputView(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(attribute, restarting)
         updateEditorAction(attribute)
+        applyPendingFieldMode() // V82：视图就绪后补应用一次字段键盘决策
     }
 
     private fun updateEditorAction(attribute: EditorInfo?) {
@@ -692,6 +697,87 @@ class VoiceImeService : InputMethodService() {
             ic.performEditorAction(editorAction)
         } else {
             ic.commitText("\n", 1)
+        }
+    }
+
+    // ---------- V82：输入框类型适配（数字/电话框自动切数字键盘） ----------
+
+    /** 当前字段会话是否处于"数字/电话自动模式"（自动切进过数字键盘） */
+    private var digitFieldActive = false
+
+    /** 上一个字段的身份键（包名|fieldId|inputType）；身份不变 = 同一字段，不干预用户的手动切换 */
+    private var lastFieldKey: String? = null
+
+    /** 字段决策已做、待视图就绪后补应用一次（首次聚焦时 onStartInput 可能早于视图创建） */
+    private var pendingFieldApply = false
+    private var pendingRestore = false
+
+    /** 数字/电话类输入框判定；密码变体明确排除（密码输入是项目既定范围外，不管） */
+    private fun isDigitField(attribute: EditorInfo?): Boolean {
+        val type = attribute?.inputType ?: return false
+        val variation = type and android.text.InputType.TYPE_MASK_VARIATION
+        if (variation == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            variation == android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+            variation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
+            variation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        ) return false
+        return when (type and android.text.InputType.TYPE_MASK_CLASS) {
+            android.text.InputType.TYPE_CLASS_NUMBER,
+            android.text.InputType.TYPE_CLASS_PHONE -> true
+            else -> false
+        }
+    }
+
+    /**
+     * 新字段获得焦点时（onStartInput）按类型自动切键盘：
+     * 数字/电话框 → 数字键盘；从数字框换回普通文本框 → 恢复 Prefs 平常键盘。
+     * 同一字段（身份键不变）不做任何事——用户手动切走后不强行切回。
+     */
+    private fun updateFieldType(attribute: EditorInfo?) {
+        if (attribute == null) return
+        val key = "${attribute.packageName}|${attribute.fieldId}|${attribute.inputType}"
+        if (key == lastFieldKey) return
+        lastFieldKey = key
+        if (isDigitField(attribute)) {
+            digitFieldActive = true
+            pendingRestore = false
+            enterDigitMode()
+        } else if (digitFieldActive) {
+            digitFieldActive = false
+            pendingRestore = true
+            restoreNormalMode()
+        }
+        pendingFieldApply = true
+    }
+
+    /** 视图刚就绪时把挂起的字段键盘决策补应用一次（只补一次，之后不再干预） */
+    private fun applyPendingFieldMode() {
+        if (!pendingFieldApply) return
+        pendingFieldApply = false
+        val restore = pendingRestore
+        pendingRestore = false
+        if (digitFieldActive) {
+            enterDigitMode()
+        } else if (restore) {
+            restoreNormalMode()
+        }
+    }
+
+    /** 切到数字键盘（极简/拼音通用：藏起语音行，走控制器现成的数字键盘） */
+    private fun enterDigitMode() {
+        voiceBox?.visibility = View.GONE
+        // 自动切换不做 flush：旧字段的拼音组合直接丢弃（焦点已换，
+        // 把首选提交进新字段是错的）；手动点 123 的 flush 行为不变
+        pinyinController?.discardComposing()
+        pinyinController?.showDigitKeyboard()
+    }
+
+    /** 恢复用户平常的键盘（按 Prefs.kb_mode：拼音 / 极简语音） */
+    private fun restoreNormalMode() {
+        if (Prefs.getKbMode(this) == Prefs.KB_PINYIN) {
+            showPinyinKeyboard()
+        } else {
+            showVoiceKeyboard()
         }
     }
 
