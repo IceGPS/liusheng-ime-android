@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 private class UserDictDbHelper(ctx: Context) :
-    SQLiteOpenHelper(ctx, "user_dict.db", null, 1) {
+    SQLiteOpenHelper(ctx, "user_dict.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE user_words(" +
@@ -19,9 +19,30 @@ private class UserDictDbHelper(ctx: Context) :
                 "PRIMARY KEY (pinyin, word))",
         )
         db.execSQL("CREATE INDEX idx_user_words_word ON user_words(word)")
+        db.execSQL(CREATE_BIGRAMS)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // V83（DB v2）：新增个人联想表 user_bigrams
+        if (oldVersion < 2) db.execSQL(CREATE_BIGRAMS_IF_NOT_EXISTS)
+    }
+
+    companion object {
+        private const val CREATE_BIGRAMS =
+            "CREATE TABLE user_bigrams(" +
+                "prev_word TEXT NOT NULL," +
+                "word TEXT NOT NULL," +
+                "freq INTEGER NOT NULL DEFAULT 1," +
+                "updated INTEGER NOT NULL," +
+                "PRIMARY KEY (prev_word, word))"
+        private const val CREATE_BIGRAMS_IF_NOT_EXISTS =
+            "CREATE TABLE IF NOT EXISTS user_bigrams(" +
+                "prev_word TEXT NOT NULL," +
+                "word TEXT NOT NULL," +
+                "freq INTEGER NOT NULL DEFAULT 1," +
+                "updated INTEGER NOT NULL," +
+                "PRIMARY KEY (prev_word, word))"
+    }
 }
 
 /**
@@ -62,6 +83,9 @@ object UserDict {
     /** 内存缓存：pinyin -> 词表（读走内存，UI 线程无 IO） */
     private val cache = ConcurrentHashMap<String, MutableList<UserWord>>()
 
+    /** 个人联想缓存（V83）：prev_word -> (word, freq) 列表，按 freq 降序 */
+    private val bigramCache = ConcurrentHashMap<String, MutableList<Pair<String, Int>>>()
+
     @Volatile private var loaded = false
 
     /** 幂等初始化 */
@@ -94,6 +118,16 @@ object UserDict {
                     }
                 }
                 for ((_, list) in cache) list.sortByDescending { it.freq }
+                db().rawQuery(
+                    "SELECT prev_word, word, freq FROM user_bigrams",
+                    null,
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        bigramCache.getOrPut(c.getString(0)) { mutableListOf() }
+                            .add(c.getString(1) to c.getInt(2))
+                    }
+                }
+                for ((_, list) in bigramCache) list.sortByDescending { it.second }
             } catch (_: Exception) {
             }
             loaded = true
@@ -190,5 +224,50 @@ object UserDict {
             } catch (_: Exception) {
             }
         }
+    }
+
+    // ---------- 个人联想（V83）：相邻词对 ----------
+
+    /**
+     * 记录一次真实上屏的相邻词对（prev → word）。内存立即更新，DB 异步写。
+     * 联想点选上屏的词也走这里记录，联想链本身参与学习。
+     * 注：词典管理页（清空/删词）本版不动这张表。
+     */
+    fun recordBigram(prev: String, word: String) {
+        if (prev.isEmpty() || word.isEmpty()) return
+        if (prev.length > MAX_WORD_LEN || word.length > MAX_WORD_LEN) return
+        ensureLoaded()
+        synchronized(this) {
+            val list = bigramCache.getOrPut(prev) { mutableListOf() }
+            val idx = list.indexOfFirst { it.first == word }
+            if (idx >= 0) {
+                list[idx] = word to (list[idx].second + 1)
+            } else {
+                list.add(word to 1)
+            }
+            list.sortByDescending { it.second }
+        }
+        io.execute {
+            try {
+                val now = System.currentTimeMillis()
+                db().execSQL(
+                    "INSERT INTO user_bigrams(prev_word, word, freq, updated) " +
+                        "VALUES(?,?,1,?) " +
+                        "ON CONFLICT(prev_word, word) DO UPDATE SET freq=freq+1, updated=?",
+                    arrayOf(prev, word, now, now),
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** 个人联想：prev 的下一词候选（按个人频次降序；freq=1 也返回，靠后由合并顺序决定） */
+    fun nextWords(prev: String): List<String> {
+        if (prev.isEmpty()) return emptyList()
+        ensureLoaded()
+        return bigramCache[prev]
+            ?.sortedByDescending { it.second }
+            ?.map { it.first }
+            ?: emptyList()
     }
 }

@@ -131,6 +131,18 @@ class SettingsActivity : Activity() {
         }
         root.addView(schemeGroup)
 
+        // ---------- 联想输入（V83） ----------
+        root.addView(sectionTitle("联想输入"))
+        val assocSwitch = Switch(this).apply {
+            text = "联想输入：选词后预测下一个词（本地词表 + 个人习惯，离线）"
+            isChecked = Prefs.isAssocEnabled(this@SettingsActivity)
+            setOnCheckedChangeListener { _, checked ->
+                Prefs.setAssocEnabled(this@SettingsActivity, checked)
+                toast(if (checked) "联想输入已开启" else "联想输入已关闭")
+            }
+        }
+        root.addView(assocSwitch)
+
         // ---------- 剪贴板历史（V69） ----------
         root.addView(sectionTitle("剪贴板历史"))
         val clipSwitch = Switch(this).apply {

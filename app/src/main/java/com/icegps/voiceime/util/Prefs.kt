@@ -160,6 +160,22 @@ object Prefs {
         prefs(ctx).edit().putString(KEY_PINYIN_SCHEME, v).apply()
     }
 
+    // ---------- 联想输入（V83） ----------
+
+    private const val KEY_ASSOC_ENABLED = "assoc_enabled"
+
+    /**
+     * 联想输入总开关：选词上屏后在候选栏预测"下一词"
+     * （本地静态联想表 + 个人相邻词对学习，全程离线）。默认开启。
+     * 关闭时不记录个人词对、不展示联想，行为与 V82 一致。
+     */
+    fun isAssocEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_ASSOC_ENABLED, true)
+
+    fun setAssocEnabled(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_ASSOC_ENABLED, v).apply()
+    }
+
     // ---------- 剪贴板历史（V69） ----------
 
     private const val KEY_CLIP_ENABLED = "clip_enabled"

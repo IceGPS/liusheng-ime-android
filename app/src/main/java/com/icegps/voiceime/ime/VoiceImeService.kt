@@ -14,6 +14,7 @@ import android.widget.Toast
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.RelativeSizeSpan
+import com.icegps.voiceime.ime.pinyin.AssociationEngine
 import com.icegps.voiceime.ime.pinyin.CandidateBarView
 import com.icegps.voiceime.ime.pinyin.ClipPanelView
 import com.icegps.voiceime.ime.pinyin.PinyinDictionary
@@ -66,6 +67,11 @@ class VoiceImeService : InputMethodService() {
         Thread {
             try {
                 PinyinDictionary.get(this)
+            } catch (_: Exception) {
+            }
+            try {
+                // V83：静态联想表（0.6MB）随预热加载，选词联想查询走内存
+                AssociationEngine.warmUp(this)
             } catch (_: Exception) {
             }
             try {
@@ -538,6 +544,8 @@ class VoiceImeService : InputMethodService() {
             attachSymbol(symbolKeyboard)
             // 接入真实引擎（词典 + 小鹤双拼，替代桩实现）
             setEngine(EngineAdapter(ctx))
+            // V83：联想总开关接 Prefs（设置页可关；关闭时行为同 V82）
+            assocEnabledProvider = { Prefs.isAssocEnabled(ctx) }
             // 拼音键盘空格麦克风：按住录音、松开转写（与极简语音键盘同一套录音链路）
             onVoiceRecordStart = { startRecording() }
             onVoiceRecordStop = { stopAndTranscribe() }

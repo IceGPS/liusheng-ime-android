@@ -15,6 +15,8 @@ import android.view.inputmethod.InputConnection
  * - 回车：有组合文本时原样上屏拼音字母（不做汉字转换，也不触发编辑器动作）；
  *   无组合文本时，若编辑器声明了动作（搜索/发送等，V81）则 performEditorAction，否则换行
  * - 空格：有组合文本时选首选；无组合文本时输入空格
+ * - 联想（V83）：选词上屏后候选栏切联想模式显示"下一词"（个人 bigram 在前 + 静态联想在后）；
+ *   点联想词直接上屏并以它为新起点继续联想；字母/退格/回车/模式切换/语音都会退出联想
  */
 class PinyinInputController(
     private val connectionProvider: () -> InputConnection?,
@@ -55,6 +57,17 @@ class PinyinInputController(
      * 仅在无拼音组合文本时生效——组合态回车永远上屏原始拼音字母。
      */
     var editorAction: Int = EditorInfo.IME_ACTION_NONE
+
+    // ---------- V83 联想输入 ----------
+
+    /** 最近一次真实上屏的词（个人 bigram 的 prev）；链断裂点（退格/回车/切模式/换字段）清空 */
+    private var lastWord: String? = null
+
+    /** 联想模式中候选栏正显示的联想词；非 null = 处于联想模式（此时拼音组合必为空） */
+    private var assocWords: List<String>? = null
+
+    /** 联想总开关（由 Service 接 Prefs.isAssocEnabled）；关闭时不记录 bigram、不展示联想（行为同 V82） */
+    var assocEnabledProvider: () -> Boolean = { true }
 
     /**
      * 点候选栏右端 ">" 时触发；为 null 时使用默认的浮层面板实现。
@@ -99,8 +112,14 @@ class PinyinInputController(
             override fun onVoiceRecordStop() { onVoiceRecordStop?.invoke() }
         }
         bar.onOpenSettings = { onOpenSettings?.invoke() }
-        bar.onCandidateClick = { selectCandidate(it) }
-        bar.onCandidateLongClick = { word -> onCandidateLongPress(word) }
+        bar.onCandidateClick = { idx ->
+            // V83：联想模式下点候选 = 点联想词（直接上屏），否则是引擎候选点选
+            if (assocWords != null) onAssocPick(idx) else selectCandidate(idx)
+        }
+        bar.onCandidateLongClick = { word ->
+            // V83：联想模式下长按不删词（联想词不是个人词典管理对象）
+            if (assocWords == null) onCandidateLongPress(word)
+        }
         bar.onExpandCandidates = { onExpandCandidates?.invoke() ?: expandCandidatePanel() }
         bar.onLangToggle = { toggleLang() } // V70：中/英为候选栏右端独立键，点按切换
         bar.onClipboardClick = { toggleClipPanel() } // V69：点击打开剪贴板历史面板
@@ -113,6 +132,7 @@ class PinyinInputController(
         this.clipPanel = panel
         panel.onEntryClick = { entry ->
             // 点选上屏：先把未完成拼音按首选提交，再上屏剪贴板文本
+            exitAssoc(clearLast = true) // V83：剪贴板上屏不接联想链
             commitWithComposingFlushed(entry.text)
             hideClipPanel()
         }
@@ -173,6 +193,7 @@ class PinyinInputController(
 
     /** 切到符号键盘：先把未完成拼音按首选上屏，再隐藏字母键盘/候选栏 */
     fun showSymbolKeyboard() {
+        exitAssoc(clearLast = true) // V83：切换键盘退出联想且断链
         if (isClipPanelShowing()) hideClipPanel() // V82：面板开着时切键盘先收面板，避免两块同时占位
         flushComposingAsFirstCandidate()
         keyboard?.visibility = android.view.View.GONE
@@ -183,6 +204,7 @@ class PinyinInputController(
 
     /** 切到数字键盘 */
     fun showDigitKeyboard() {
+        exitAssoc(clearLast = true) // V83：同 showSymbolKeyboard
         if (isClipPanelShowing()) hideClipPanel() // V82：同 showSymbolKeyboard
         flushComposingAsFirstCandidate()
         keyboard?.visibility = android.view.View.GONE
@@ -225,6 +247,7 @@ class PinyinInputController(
 
     /** 重置输入状态（输入结束 / 切换模式 / 切换中英文时调用） */
     fun reset() {
+        exitAssoc(clearLast = true) // V83：字段切换/模式重置时联想链一并清掉
         engine.clear()
         refresh()
     }
@@ -234,6 +257,7 @@ class PinyinInputController(
      * 语音录音开始前调用，避免转写上屏时与残留拼音混在一起。
      */
     fun discardComposing() {
+        exitAssoc(clearLast = true) // V83：语音录音前丢组合时联想链一并清掉（语音上屏不接联想）
         engine.clear()
         ic()?.let {
             it.setComposingText("", 1)
@@ -249,6 +273,14 @@ class PinyinInputController(
      * 候选栏显示全部候选词（横向滑动浏览）；组合文本为空时清掉下划线。
      */
     private fun refresh() {
+        val assoc = assocWords
+        if (assoc != null) {
+            // V83 联想模式：候选栏只显示联想词；无拼音组合，不动 InputConnection 组合区
+            bar?.setComposing("")
+            bar?.setCandidates(assoc)
+            bar?.setLangIndicator(isChinese)
+            return
+        }
         val composing = engine.getComposingText()
         bar?.setComposing(composing)
         bar?.setCandidates(engine.getAllCandidates())
@@ -262,8 +294,10 @@ class PinyinInputController(
     }
 
     private fun handleLetter(ch: Char) {
+        exitAssoc(clearLast = false) // V83：按字母退出联想展示；链保留，等下一个选词记 bigram
         if (!isChinese) {
-            // 英文模式：直接上屏（含 Shift 大小写），标点保持半角
+            // 英文模式：直接上屏（含 Shift 大小写），标点保持半角；英文内容断链
+            lastWord = null
             ic()?.commitText(ch.toString(), 1)
             return
         }
@@ -282,6 +316,7 @@ class PinyinInputController(
     }
 
     private fun handleSymbol(sym: Char) {
+        exitAssoc(clearLast = false) // V83：符号上屏退出联想展示（链保留，与中文标点一致）
         // 上滑输入的上标符号：中文状态转全角（技术符号保持半角），英文状态保持半角
         if (!isChinese) {
             commitWithComposingFlushed(sym.toString())
@@ -306,6 +341,7 @@ class PinyinInputController(
     }
 
     private fun handleSpace() {
+        exitAssoc(clearLast = false) // V83：空格退出联想展示（链保留）；组合非空时联想必为 null，无副作用
         if (engine.getComposingText().isNotEmpty()) {
             selectCandidate(0) // 标准行为：空格选首选（用户主动，计入自学习）
         } else {
@@ -315,6 +351,7 @@ class PinyinInputController(
     }
 
     private fun handleBackspace() {
+        exitAssoc(clearLast = true) // V83：退格退出联想且断链（被删的词不再作 prev）
         if (engine.getComposingText().isNotEmpty()) {
             engine.deleteLast()
             refresh()
@@ -324,6 +361,7 @@ class PinyinInputController(
     }
 
     private fun handleEnter() {
+        exitAssoc(clearLast = true) // V83：回车退出联想且断链；回车本身从不触发联想
         val raw = engine.rawInput()
         if (raw.isNotEmpty()) {
             // 回车直接上屏用户实际键入的原始字母（原封不动）：
@@ -349,6 +387,49 @@ class PinyinInputController(
     private fun selectCandidate(index: Int) {
         val text = engine.selectCandidate(index, learn = true) ?: return
         ic()?.commitText(text, 1)
+        onWordCommitted(text) // V83：记 bigram + 尝试进入联想
+        refresh()
+    }
+
+    // ---------- V83 联想：状态机 ----------
+
+    /**
+     * 一个词真实上屏后（选词 / 联想点选）：记录 bigram（上一个词 → 本词），
+     * 更新 lastWord，并按本词的联想候选进入（或退出）联想模式。
+     * 联想关闭时不记录、不展示、也不保留链（行为与 V82 一致）。
+     */
+    private fun onWordCommitted(word: String) {
+        if (word.isEmpty()) return
+        if (!assocEnabledProvider()) {
+            lastWord = null
+            assocWords = null
+            return
+        }
+        lastWord?.let { prev -> UserDict.recordBigram(prev, word) }
+        lastWord = word
+        val next = mergedNextWords(word)
+        assocWords = if (next.isEmpty()) null else next
+    }
+
+    /** 联想候选合并：个人搭配（按个人频次降序）在前，静态联想在后，去重取前 8 */
+    private fun mergedNextWords(prev: String): List<String> {
+        val personal = UserDict.nextWords(prev)
+        val static = AssociationEngine.nextWords(prev)
+        if (personal.isEmpty() && static.isEmpty()) return emptyList()
+        return (personal + static).distinct().take(8)
+    }
+
+    /** 退出联想模式；clearLast=true 时连 lastWord 一起清（链断裂：退格/回车/切模式等） */
+    private fun exitAssoc(clearLast: Boolean) {
+        assocWords = null
+        if (clearLast) lastWord = null
+    }
+
+    /** 联想模式下点候选：直接上屏该词（不带拼音），并以它为新起点继续联想（可连环点） */
+    private fun onAssocPick(index: Int) {
+        val word = assocWords?.getOrNull(index) ?: return
+        ic()?.commitText(word, 1)
+        onWordCommitted(word)
         refresh()
     }
 
@@ -380,6 +461,7 @@ class PinyinInputController(
     }
 
     private fun toggleLang() {
+        exitAssoc(clearLast = true) // V83：中/英切换退出联想且断链
         isChinese = !isChinese
         engine.clear()
         keyboard?.isChineseMode = isChinese
