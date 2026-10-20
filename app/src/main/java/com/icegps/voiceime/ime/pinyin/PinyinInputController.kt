@@ -17,6 +17,8 @@ import android.view.inputmethod.InputConnection
  * - 空格：有组合文本时选首选；无组合文本时输入空格
  * - 联想（V83）：选词上屏后候选栏切联想模式显示"下一词"（个人 bigram 在前 + 静态联想在后）；
  *   点联想词直接上屏并以它为新起点继续联想；字母/退格/回车/模式切换/语音都会退出联想
+ * - 联想时机（V84）：仅当选词后组合区已完全清空（汉字完整发送给前台 App）才展示联想；
+ *   部分消费（组合区仍有残留拼音）时只记 bigram 不展示，候选栏永远优先服务残留拼音
  */
 class PinyinInputController(
     private val connectionProvider: () -> InputConnection?,
@@ -273,15 +275,17 @@ class PinyinInputController(
      * 候选栏显示全部候选词（横向滑动浏览）；组合文本为空时清掉下划线。
      */
     private fun refresh() {
+        val composing = engine.getComposingText()
         val assoc = assocWords
-        if (assoc != null) {
+        // V84 硬保证：组合区非空时永远渲染拼音候选，联想词绝不抢占候选栏
+        //（联想展示的进入条件已在 selectCandidate 处收紧，这里再兜一层渲染优先级）
+        if (assoc != null && composing.isEmpty()) {
             // V83 联想模式：候选栏只显示联想词；无拼音组合，不动 InputConnection 组合区
             bar?.setComposing("")
             bar?.setCandidates(assoc)
             bar?.setLangIndicator(isChinese)
             return
         }
-        val composing = engine.getComposingText()
         bar?.setComposing(composing)
         bar?.setCandidates(engine.getAllCandidates())
         bar?.setLangIndicator(isChinese)
@@ -387,7 +391,9 @@ class PinyinInputController(
     private fun selectCandidate(index: Int) {
         val text = engine.selectCandidate(index, learn = true) ?: return
         ic()?.commitText(text, 1)
-        onWordCommitted(text) // V83：记 bigram + 尝试进入联想
+        // V84：选词只吃掉部分拼音（组合区仍有残留）时只记 bigram、不进联想展示，
+        // 候选栏继续服务残留拼音；组合区完全清空（汉字完整上屏）才允许展示联想
+        onWordCommitted(text, showAssoc = engine.getComposingText().isEmpty())
         refresh()
     }
 
@@ -395,10 +401,12 @@ class PinyinInputController(
 
     /**
      * 一个词真实上屏后（选词 / 联想点选）：记录 bigram（上一个词 → 本词），
-     * 更新 lastWord，并按本词的联想候选进入（或退出）联想模式。
+     * 更新 lastWord。[showAssoc] 为 true 时才按本词的联想候选进入联想展示——
+     * V84 起调用方在"选词只消费部分拼音、组合区仍有残留"时传 false：只记录不断链、
+     * 不展示，候选栏留给残留拼音的候选。联想点选时组合区必为空，恒为 true（可连环）。
      * 联想关闭时不记录、不展示、也不保留链（行为与 V82 一致）。
      */
-    private fun onWordCommitted(word: String) {
+    private fun onWordCommitted(word: String, showAssoc: Boolean = true) {
         if (word.isEmpty()) return
         if (!assocEnabledProvider()) {
             lastWord = null
@@ -407,8 +415,12 @@ class PinyinInputController(
         }
         lastWord?.let { prev -> UserDict.recordBigram(prev, word) }
         lastWord = word
-        val next = mergedNextWords(word)
-        assocWords = if (next.isEmpty()) null else next
+        assocWords = if (showAssoc) {
+            val next = mergedNextWords(word)
+            if (next.isEmpty()) null else next
+        } else {
+            null
+        }
     }
 
     /** 联想候选合并：个人搭配（按个人频次降序）在前，静态联想在后，去重取前 8 */
