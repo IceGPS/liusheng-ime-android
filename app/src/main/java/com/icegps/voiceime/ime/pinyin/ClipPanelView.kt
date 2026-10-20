@@ -38,6 +38,7 @@ class ClipPanelView @JvmOverloads constructor(
     var onClose: (() -> Unit)? = null
 
     private val rowsContainer: LinearLayout
+    private val scrollView: ScrollView
     private val emptyView: TextView
 
     private val isDark = (resources.configuration.uiMode and
@@ -87,15 +88,16 @@ class ClipPanelView @JvmOverloads constructor(
             setPadding(dp(16), dp(32), dp(16), dp(32))
         }
 
-        // 列表（滚动）
+        // 列表（滚动）：滚动条常显（V76）；内容超高时在面板限高内滚动
         rowsContainer = LinearLayout(context).apply {
             orientation = VERTICAL
         }
-        val scroll = ScrollView(context).apply {
-            isVerticalScrollBarEnabled = false
+        scrollView = ScrollView(context).apply {
+            isVerticalScrollBarEnabled = true
+            isScrollbarFadingEnabled = false
             addView(rowsContainer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         }
-        addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        addView(scrollView, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
         // 底部工具栏：清空 | 关闭
         val toolbar = LinearLayout(context).apply {
@@ -136,9 +138,8 @@ class ClipPanelView @JvmOverloads constructor(
             showEmpty()
             return
         }
-        // 展示层只取最近 5 条（置顶优先、其次最新，与 ClipStore.list() 排序一致）；
-        // DB 仍存满 50 条，这里不删数据（V75）。
-        val entries = ClipStore.list().take(MAX_VISIBLE_ENTRIES)
+        // 展示全部历史（DB 上限 50 条，V76）；面板限高 + 内部滚动
+        val entries = ClipStore.list()
         if (entries.isEmpty()) {
             emptyView.text = "暂无剪贴板历史\n在任意应用中复制文本后会自动记录"
             showEmpty()
@@ -147,6 +148,7 @@ class ClipPanelView @JvmOverloads constructor(
         rowsContainer.addView(emptyView)
         emptyView.visibility = View.GONE
         entries.forEach { entry -> rowsContainer.addView(buildRow(entry)) }
+        scrollView.scrollTo(0, 0)
     }
 
     private fun showEmpty() {
@@ -251,10 +253,7 @@ class ClipPanelView @JvmOverloads constructor(
     }
 
     companion object {
-        /** 面板最多显示的条数（DB 上限仍是 50，只限制展示，V75） */
-        private const val MAX_VISIBLE_ENTRIES = 5
-
-        /** 面板高度上限占屏幕高度的比例（V75） */
+        /** 面板高度上限占屏幕高度的比例（V75 引入，V76 配合内部滚动展示全部条目） */
         private const val MAX_HEIGHT_FRACTION = 0.5f
     }
 }
