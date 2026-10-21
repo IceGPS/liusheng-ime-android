@@ -10,10 +10,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
-import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.style.RelativeSizeSpan
 import com.icegps.voiceime.ime.pinyin.AssociationEngine
 import com.icegps.voiceime.ime.pinyin.CandidateBarView
 import com.icegps.voiceime.ime.pinyin.ClipPanelView
@@ -297,19 +295,38 @@ class VoiceImeService : InputMethodService() {
         // V68：。 键（点按=句号，上滑=逗号；固定全角——极简键盘无中/英切换 UI，
         // 跟随看不见的状态会让用户困惑；且语音转写输出中文+全角标点，手动补标点保持全角才一致）
         // 位置：空格键与退格键之间（四套键盘统一底行）
-        val punctBtn = Button(ctx).apply {
-            styleBtn(this, btnColor, textColor)
-            // V70：键面同时显示 ，（上滑，缩小置顶）和 。（主）；
-            // 与手绘键盘上标惯例一致（上滑字符在上，点按字符在下）。
-            // 极简键盘固定全角（无中/英切换 UI），逗号恒为全角 ，。
-            text = SpannableStringBuilder("，\n。").apply {
-                setSpan(RelativeSizeSpan(0.55f), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            textSize = 20f
+        // V89：键面改两个 TextView 纵排的复合视图。原实现（V70）是单个 Button
+        // 的两行带 span 文本（"，\n。"），在真机（MIUI）上只渲染出第一行——
+        // 句号不显示，宽/窄屏都只剩逗号（Hongjie 截图实证）；复合视图逐行
+        // 独立排版，不依赖 Button 的多行文本布局行为。
+        // 上滑字符在上（小字），点按字符在下（大字），与手绘键盘上标惯例一致；
+        // 极简键盘固定全角（无中/英切换 UI），逗号恒为全角 ，。
+        val punctBtn = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(btnColor)
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
                 marginEnd = dp(2)
             }
+            addView(TextView(ctx).apply {
+                text = "，"
+                textSize = 11f
+                setTextColor(textColor)
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                isClickable = false
+                isFocusable = false
+            })
+            addView(TextView(ctx).apply {
+                text = "。"
+                textSize = 20f
+                setTextColor(textColor)
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                isClickable = false
+                isFocusable = false
+            })
         }
         var punctDownY = 0f
         var punctSwiped = false
@@ -410,7 +427,12 @@ class VoiceImeService : InputMethodService() {
         val abcBtn = Button(ctx).apply {
             styleBtn(this, btnColor, textColor)
             text = "ABC"
-            textSize = 20f
+            // V89：窄屏（折叠屏外屏等，宽 <400dp）下 20sp 的 "ABC" 装不下、
+            // C 被换行到第二行且被裁（Hongjie 截图实证）：窄屏字号降到 15sp；
+            // 同时强制单行 + 水平内边距归零，构造上杜绝换行。
+            textSize = if (ctx.resources.configuration.screenWidthDp < 400) 15f else 20f
+            isSingleLine = true
+            setPadding(0, paddingTop, 0, paddingBottom)
             isHapticFeedbackEnabled = true
             layoutParams = LinearLayout.LayoutParams(0, dp(56), 1.2f).apply {
                 marginEnd = dp(2)
