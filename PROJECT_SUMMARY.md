@@ -1,6 +1,6 @@
 # 留声输入法（Liusheng）Android 项目总结文档
 
-> 版本：V86（2026-10-21）
+> 版本：V88（2026-10-21）
 > 仓库：https://github.com/IceGPS/liusheng-ime-android
 > 目标读者：未来接手维护/升级的开发者
 
@@ -61,7 +61,7 @@
 |---|---|---|
 | 键盘服务 | `ime/VoiceImeService.kt` | InputMethodService；极简语音键盘 UI；录音手势；转写调度；文本上屏 |
 | 拼音键盘 | `ime/pinyin/PinyinKeyboardView.kt`、`PinyinInputController.kt` | 手绘 QWERTY；候选栏/浮层；中/英切换；剪贴板面板入口 |
-| 拼音引擎 | `ime/pinyin/PinyinEngine.kt` 等 | 纯 Kotlin 拼音引擎 + 雾凇词库（88 万词条）；小鹤双拼（零声母标准键位 + 双字母照字母打，V85/V86） |
+| 拼音引擎 | `ime/pinyin/PinyinEngine.kt` 等 | 纯 Kotlin 拼音引擎 + 雾凇词库（89 万词条全量入册，V87）；小鹤双拼（零声母标准键位 + 双字母照字母打，V85/V86） |
 | 词典自学习/联想 | `ime/pinyin/UserDict.kt`、`assets/assoc_dict.bin` | 选词记忆/造词/删词（SQLite `user_dict.db`）；联想：个人 bigram（同库 v2）+ 静态搭配表（`tools/build_assoc.py` 离线生成） |
 | 符号键盘 | `ime/pinyin/SymbolKeyboardView.kt`、`SymbolWidth.kt` | 符号 2 页 / 数字键盘；全角半角区分；点选停留连打 |
 | 剪贴板 | `service/clip/ClipStore.kt`、`ClipSyncManager.kt`、`ClipCrypto.kt` | SQLite 历史；mDNS 发现；配对；AES-GCM；手机↔PC 同步 |
@@ -111,7 +111,7 @@ JSONL 每行：
 {"ts":"2026-10-13T15:30:22","audio":"recordings/2026/10/(20261013-153022)今天天气不错.m4a","text":"识别结果","engine":"ondevice","dur_ms":3200}
 ```
 
-### 2.5 近期演进要点（V79–V86）
+### 2.5 近期演进要点（V79–V88）
 
 - **V79/V80 界面细节**：删主界面过时的 🌐 说明行（🌐 键 V67 已退役）；四页（主界面/设置/权限引导/个人词典）内容下移一行字高，标题不与状态栏重叠
 - **V81 回车键自适应**：跟随 `EditorInfo.imeOptions` 显示搜索/前往/发送/完成/下一项/上一项，无动作显示 ⏎，有动作走 `performEditorAction`（不少 App 只监听系统动作回调，标准回车在其中不触发搜索/执行——这是改通道的根因）；拼音组合态回车仍上屏原始字母；四套键盘统一
@@ -119,7 +119,9 @@ JSONL 每行：
 - **V83/V84 汉字联想**：选词上屏后候选栏预测下一词、可连环点；静态表离线挖掘 rime-ice 短语（21,559 个上文词 / 90,471 词对 / 0.59MB）+ 个人 bigram 层（`user_dict.db` 升 v2）排静态之前；设置开关默认开。V84 收紧触发（Hongjie 定调）：**联想只在汉字完整发送给前台 App 后启动**——选词后组合区完全清空才展示，部分消费只记 bigram 不展示，refresh 硬保证组合非空永远渲染拼音候选
 - **拼音引擎基线评测（2026-10-20）**：用 chinese-ime-lm 评测集量基线（报告在项目资料 `engine-baseline-eval-2026-10-20.md`，harness 在 `tools/eval-baseline/`）：词级 25,119 条 top-1 71.31% / top-3 87.48% / top-9 91.99%，词典精确桶 top-1 77.16%；拼装桶 0% 经深挖为评测集源词库键截断（gold 在 top-200 出现 0 次，真覆盖缺口仅 135 条）；整句 60 条全对 65% / 逐字 92.01%。Hongjie 决策：整句重排实验搁置，基线存档，评测集留作回归尺子
 - **V85/V86 双拼零声母**：V85 修存量 bug——`buildReverseMap` 零声母 `init=""` 时 `firstOrNull` 为 null 被 `?: continue` 静默跳过，自双拼第一版起只有 aa/oo/ee 能打，复合韵母零声母从未建入；按标准「韵母首字母+韵母键位」补建（安 aj、恩 ef、昂 ah；iong 与 chong 在 is 并存；u 系挡掉防污染），端到端 ajqr→安全 rank 1。V86 按 Hongjie 习惯增加双字母韵母「照字母打」（an 就打 an），与标准键位并存（纯新增零冲突；in 字面对与 iao 共用一对；三字母不加）；混打 anpd→安排 rank 1
-- V79–V86 均已发 Release，Hongjie 于 2026-10-21 全部真机验收通过
+- **V87 词库系统性缺字修复**：Hongjie 报双拼 ui 找不到"适"。全量审计（`tools/pinyin-data/audit_dict_coverage.py`，口径=源三库每个（字，读音）对逐一核对 bin）发现预处理 `MAX_PER_KEY=20` 按词频截断误杀 3,064/8,757 对（35%，shi 缺 63 含诗/试/食等常用字，"适"在 shi 键排第 26 被截）。修法：单字永不截断 + 多字词上限 40，源条目 891,061 全量入册（bin 28,204,284B，仅 +0.1%）；连带 lve/nve→lue/nue 拼写对齐（略/虐救回）、全量面板上限 200→1024、合法音节集补 cei/fiao/lo/tei/biang/rua 六方言音节。复查缺失 0、双拼全可达；基线复跑 top-1 73.33%（原 71.31%）、整句 65% 持平。**守门规则：动词库发版前必复跑覆盖审计，缺失须为 0**
+- **V88 空删除与落单字母修复**：Hongjie 报退格删空恒多一按（N 字母 N+1 按、单字母亦然、每次必现）且正文常落单字母。根因：`refresh()` 组合变空分支只调 `finishComposingText()`——AOSP 语义下它只摘 composing 标记不删字符，最后组合片段被扶正为正文残留（删空那一按即"空删除"；不补按续打/回车/切键盘则残留漏进正文，单键残留恰为 1 字母）。同病根放大版：切中/英、切语音（switchToVoice 自带裸 finish）、reset、切方案会泄漏整串显示文本。修法（仅 PinyinInputController.kt）：`composingConn` 连接身份守卫 + 空分支先 `setComposingText("",1)` 再 finish（与 discardComposing 既有正确写法对齐），switchToVoice 删裸 finish。控制器级仿真 `tools/backspace-sim/`（FakeEditor 按 AOSP 语义，场景 A–G）守门；符号/极简键盘退格经核查无此问题；基线零回归。遗留：浮层面板 outside-touch 吞第一下（与本案无关）、`VoiceImeService.showVoiceKeyboard()` 裸 finish 一句（已核查无害），后续顺手处理
+- V79–V88 均已发 Release，Hongjie 于 2026-10-21 全部真机验收通过
 
 ---
 
