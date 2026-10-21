@@ -69,11 +69,25 @@ object ShuangpinMapper {
                 result.getOrPut(pair) { mutableListOf() }.add(syllable)
             }
         }
-        // 零声母特殊处理：a→aa, o→oo, e→ee（小鹤标准）
-        for (fin in listOf("a", "o", "e")) {
+        // 零声母（小鹤标准）：按键对 = 韵母首字母 + 该韵母的键位。
+        // 主循环里 init="" 时取不到声母键（INITIAL_TO_KEY[""] 与 "".firstOrNull() 均为 null），
+        // 零声母音节一个都建不进来，必须在这里统一补建。
+        // 放行范围（能独立成音节的韵母）：
+        //  · a/o/e 系（a、ai、an、ang、ao、e、ei、en、eng、er、o、ou）：PinyinSyllables.isValid(fin)
+        //    按独立拼写可查到；其中单韵母 a/o/e 按本规则正好得 aa/oo/ee，与小鹤"单韵母双写"一致，
+        //    故原先 a/o/e 的特殊处理已被本规则覆盖、删除。
+        //  · i 系（ia、ie、iao、ian、iang、in、ing、iong）与 ong：全拼正字法里不独立拼写
+        //    （i 系零声母写作 y- 形式、ong 必带声母），isValid 按独立拼写查不到，但小鹤零声母
+        //    同样以韵母首字母作声母键，故显式放行；与既有声母对并存（一对多，如 is=[chong, iong]）。
+        // u 系（ua、uo、uai、uan、uang 等）不能独立成音节、且首键 u 与 sh 的键冲突，不放行，
+        // 避免污染既有声母对（如 uu 不得给 shu 加假音节）。
+        val extraZeroInitial = setOf("ia", "ie", "iao", "ian", "iang", "in", "ing", "iong", "ong")
+        for (fin in finals) {
+            if (!PinyinSyllables.isValid(fin) && fin !in extraZeroInitial) continue
             val finKey = FINAL_TO_KEY[fin] ?: continue
-            val pair = "$finKey$finKey"
-            result.getOrPut(pair) { mutableListOf() }.add(fin)
+            val pair = "${fin.first()}$finKey"
+            val list = result.getOrPut(pair) { mutableListOf() }
+            if (fin !in list) list.add(fin)
         }
         return result
     }
