@@ -26,6 +26,15 @@ class PinyinInputController(
     private val onToast: (String) -> Unit = {},
 ) {
     private var engine: PinyinEngine = StubPinyinEngine()
+
+    /**
+     * 本控制器已向哪个 InputConnection 推送过 composing 区域。
+     * refresh() 在组合由非空变空时据此判断：若区域是本控制器推给**同一个**
+     * 连接的，必须先清掉编辑器里的组合文本再 finish（见 refresh 注释）；
+     * 连接已换（新输入框）则不动新编辑器，避免误伤其选区。
+     */
+    private var composingConn: InputConnection? = null
+
     private var keyboard: PinyinKeyboardView? = null
     private var bar: CandidateBarView? = null
     private var symbolKeyboard: SymbolKeyboardView? = null
@@ -265,6 +274,7 @@ class PinyinInputController(
             it.setComposingText("", 1)
             it.finishComposingText()
         }
+        composingConn = null // 已手工清掉编辑器组合区，refresh 不必再清一次
         refresh()
     }
 
@@ -292,6 +302,20 @@ class PinyinInputController(
         val conn = ic() ?: return
         if (composing.isNotEmpty()) {
             conn.setComposingText(composing, 1)
+            composingConn = conn
+        } else if (composingConn === conn) {
+            // 组合区由非空变空（如退格删掉最后一个拼音字母、切中/英、重置）：
+            // 必须先清掉编辑器里的组合文本再 finish。
+            // finishComposingText() 只摘除 composing 标记、**不删字符**——直接
+            // finish 会把最后一个组合片段（如 "h"）作为已上屏文本残留在编辑器里：
+            //  · 表现为一次"空删除"：候选已清空、字却没删掉，要再按一次退格
+            //    才删得掉残留（hjzi 4 个字母要按 5 次退格）；
+            //  · 若用户不补按而是继续打字/回车/切键盘/切字段，残留片段就留在
+            //    正文里，成为落单的单个字母。
+            // 清法与 discardComposing() 一致：setComposingText("", 1) 后再 finish。
+            conn.setComposingText("", 1)
+            conn.finishComposingText()
+            composingConn = null
         } else {
             conn.finishComposingText()
         }
@@ -486,7 +510,9 @@ class PinyinInputController(
 
     private fun switchToVoice() {
         engine.clear()
-        ic()?.finishComposingText()
+        // 不再直接 finishComposingText()：那只摘标记不删字，会把整串拼音组合
+        // 文本（如 ni'hao）漏进编辑器正文。交给 refresh() 的空组合分支统一处理
+        // （先清组合文本再 finish，与退格删空同一路径）。
         refresh()
         onSwitchToVoice()
     }
