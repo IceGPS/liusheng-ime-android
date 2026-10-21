@@ -1,6 +1,6 @@
 # 留声输入法（Liusheng）Android 项目总结文档
 
-> 版本：V70（2026-10-20）
+> 版本：V86（2026-10-21）
 > 仓库：https://github.com/IceGPS/liusheng-ime-android
 > 目标读者：未来接手维护/升级的开发者
 
@@ -61,7 +61,8 @@
 |---|---|---|
 | 键盘服务 | `ime/VoiceImeService.kt` | InputMethodService；极简语音键盘 UI；录音手势；转写调度；文本上屏 |
 | 拼音键盘 | `ime/pinyin/PinyinKeyboardView.kt`、`PinyinInputController.kt` | 手绘 QWERTY；候选栏/浮层；中/英切换；剪贴板面板入口 |
-| 拼音引擎 | `ime/pinyin/PinyinEngine.kt` 等 | 纯 Kotlin 拼音引擎 + 雾凇词库（88 万词条）；小鹤双拼 |
+| 拼音引擎 | `ime/pinyin/PinyinEngine.kt` 等 | 纯 Kotlin 拼音引擎 + 雾凇词库（88 万词条）；小鹤双拼（零声母标准键位 + 双字母照字母打，V85/V86） |
+| 词典自学习/联想 | `ime/pinyin/UserDict.kt`、`assets/assoc_dict.bin` | 选词记忆/造词/删词（SQLite `user_dict.db`）；联想：个人 bigram（同库 v2）+ 静态搭配表（`tools/build_assoc.py` 离线生成） |
 | 符号键盘 | `ime/pinyin/SymbolKeyboardView.kt`、`SymbolWidth.kt` | 符号 2 页 / 数字键盘；全角半角区分；点选停留连打 |
 | 剪贴板 | `service/clip/ClipStore.kt`、`ClipSyncManager.kt`、`ClipCrypto.kt` | SQLite 历史；mDNS 发现；配对；AES-GCM；手机↔PC 同步 |
 | 录音 | `service/Recorder.kt` | AudioRecord 采集 16kHz PCM；支持 VAD 自动停止 |
@@ -109,6 +110,16 @@ JSONL 每行：
 ```json
 {"ts":"2026-10-13T15:30:22","audio":"recordings/2026/10/(20261013-153022)今天天气不错.m4a","text":"识别结果","engine":"ondevice","dur_ms":3200}
 ```
+
+### 2.5 近期演进要点（V79–V86）
+
+- **V79/V80 界面细节**：删主界面过时的 🌐 说明行（🌐 键 V67 已退役）；四页（主界面/设置/权限引导/个人词典）内容下移一行字高，标题不与状态栏重叠
+- **V81 回车键自适应**：跟随 `EditorInfo.imeOptions` 显示搜索/前往/发送/完成/下一项/上一项，无动作显示 ⏎，有动作走 `performEditorAction`（不少 App 只监听系统动作回调，标准回车在其中不触发搜索/执行——这是改通道的根因）；拼音组合态回车仍上屏原始字母；四套键盘统一
+- **V82 输入框类型适配**：`onStartInput` 按字段身份（包名|fieldId|inputType）决策——数字/电话框自动切数字键盘，换回文本框按 `kb_mode` 恢复，同一字段手动切走不强切回；密码框不管；邮箱/网址未做；数字键盘主页缺 #/*（在符号英文页）
+- **V83/V84 汉字联想**：选词上屏后候选栏预测下一词、可连环点；静态表离线挖掘 rime-ice 短语（21,559 个上文词 / 90,471 词对 / 0.59MB）+ 个人 bigram 层（`user_dict.db` 升 v2）排静态之前；设置开关默认开。V84 收紧触发（Hongjie 定调）：**联想只在汉字完整发送给前台 App 后启动**——选词后组合区完全清空才展示，部分消费只记 bigram 不展示，refresh 硬保证组合非空永远渲染拼音候选
+- **拼音引擎基线评测（2026-10-20）**：用 chinese-ime-lm 评测集量基线（报告在项目资料 `engine-baseline-eval-2026-10-20.md`，harness 在 `tools/eval-baseline/`）：词级 25,119 条 top-1 71.31% / top-3 87.48% / top-9 91.99%，词典精确桶 top-1 77.16%；拼装桶 0% 经深挖为评测集源词库键截断（gold 在 top-200 出现 0 次，真覆盖缺口仅 135 条）；整句 60 条全对 65% / 逐字 92.01%。Hongjie 决策：整句重排实验搁置，基线存档，评测集留作回归尺子
+- **V85/V86 双拼零声母**：V85 修存量 bug——`buildReverseMap` 零声母 `init=""` 时 `firstOrNull` 为 null 被 `?: continue` 静默跳过，自双拼第一版起只有 aa/oo/ee 能打，复合韵母零声母从未建入；按标准「韵母首字母+韵母键位」补建（安 aj、恩 ef、昂 ah；iong 与 chong 在 is 并存；u 系挡掉防污染），端到端 ajqr→安全 rank 1。V86 按 Hongjie 习惯增加双字母韵母「照字母打」（an 就打 an），与标准键位并存（纯新增零冲突；in 字面对与 iao 共用一对；三字母不加）；混打 anpd→安排 rank 1
+- V79–V86 均已发 Release，Hongjie 于 2026-10-21 全部真机验收通过
 
 ---
 
@@ -238,6 +249,7 @@ but assetManager is NOT set to null.
 | 拼音方案 | `pinyin_scheme` | 全拼/小鹤 |
 | 模型地址 | `model_base_url` | HuggingFace 默认 |
 | 模型已就绪 | `model_ready` | false |
+| 联想输入开关 | `assoc_enabled` | true（开） |
 | 剪贴板总开关 | `clip_enabled` | false（首次配对后自动开） |
 | 本机设备 ID | `clip_device_id` | 首次生成后持久化 |
 | 配对表 | `clip_paired_json` | 空 |
@@ -251,8 +263,8 @@ but assetManager is NOT set to null.
 1. **mDNS 多服务器**：目前 Android 端自动选第一台；目标是多服务器列表、用户选择并记住、故障转移（V26 起部分实现）
 2. **VAD 阈值调优**：当前固定 RMS 0.02，未经充分真机验证，可能需要自适应环境噪声
 3. **Syncthing 配置指导**：待存储格式稳定后，指导 Hongjie 配置 `/sdcard/VoiceIME` 同步
-4. **用户词典自学习**：拼音输入记住用户选词习惯，未做
-5. **剪贴板 v2**：极简键盘入口、历史搜索、图片条目、离线队列、TLS 通道
+4. **用户词典自学习**：已完成（V72 选词记忆/造词/删词，V73 独立管理页；V83 起同库扩展个人 bigram 联想层）
+5. **剪贴板 v2**：历史搜索、图片条目、离线队列、TLS 通道（极简键盘入口已决策不做）
 6. **iOS / macOS / Linux 版**：待 Hongjie 决策平台顺序（iOS 键盘内录音已验证可行）
 7. **Play 上架**：Mica 侧已就绪（targetSdk 35、AAB、隐私政策、商店素材）；待 Hongjie：开发者账号、数据安全表、分级问卷、真机截图、USPTO 1(b) 决策
 
