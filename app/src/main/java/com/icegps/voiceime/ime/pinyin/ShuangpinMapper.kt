@@ -89,6 +89,16 @@ object ShuangpinMapper {
             val list = result.getOrPut(pair) { mutableListOf() }
             if (fin !in list) list.add(fin)
         }
+        // 零声母双字母韵母"照字母打"（V86，与上面的标准键位打法并存）：
+        // 按键对 = 韵母本身的两个字母（安 an 就打 a、n 两键）。
+        // 只加双字母韵母——三字母（如 ang）照打要三个键，会破坏"每音节两键"的切分。
+        // ai/ei/ao/ou/an/en 的首键 a/e/o 永不做声母键，这些字面对原先为空，纯新增零冲突；
+        // er 的字面对与标准对相同（下面去重）；in 的字面对 "in" 与 iao 的标准对
+        // （i + iao键n）是同一个对，追加在 iao 之后并存、候选合并（同 is=[chong, iong] 模式）。
+        for (fin in listOf("an", "ai", "ao", "ou", "en", "ei", "er", "in")) {
+            val list = result.getOrPut(fin) { mutableListOf() }
+            if (fin !in list) list.add(fin)
+        }
         return result
     }
 
