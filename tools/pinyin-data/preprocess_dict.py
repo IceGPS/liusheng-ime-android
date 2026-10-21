@@ -14,6 +14,12 @@ RIME 词库预处理：将 rime-ice 的 dict.yaml 转换为手机端紧凑二进
 import struct
 import sys
 
+# 音节拼写对齐：rime-ice 把 l/n + üe 写成 lve/nve，引擎合法音节集
+# （PinyinSyllables）用 lue/nue。不对齐时这些条目在双拼下永远打不出来
+# （全拼也只能靠 lv+e / nv+e 的切分巧合命中）。源数据从不使用 lue/nue
+# 拼写，故此映射无冲突。V87 引入。
+SYLLABLE_ALIASES = {'lve': 'lue', 'nve': 'nue'}
+
 def parse_dict(path):
     """解析 RIME dict.yaml，返回 {pinyin_key: [(word, freq)]}"""
     entries = {}
@@ -34,8 +40,8 @@ def parse_dict(path):
             except ValueError:
                 continue
             # pinyin key：音节用空格分隔，转为无空格连接（便于前缀匹配）
-            # 保留原始分词用于显示
-            key = pinyin.replace(' ', '')
+            # 保留原始分词用于显示；键按 SYLLABLE_ALIASES 做拼写对齐
+            key = ''.join(SYLLABLE_ALIASES.get(syl, syl) for syl in pinyin.split())
             if key not in entries:
                 entries[key] = []
             entries[key].append((word, freq, pinyin))
@@ -71,11 +77,22 @@ def main():
         sorted_words = sorted(seen.items(), key=lambda x: -x[1][0])
         merged[key] = [(w, f, p) for w, (f, p) in sorted_words]
 
-    # 过滤：每个拼音键最多保留 20 个候选（控制体积）
-    # 总词条数控制在合理范围
-    MAX_PER_KEY = 20
+    # 过滤（V87 修复）：旧策略每键一刀切 20 条，按词频把同音密集音节的
+    # 大量单字误杀（shi 键 83 个单字只剩 20 个，"适/诗/试/释"等常用字
+    # 根本进不了词库；全量审计缺失 3064 个（字，读音）对）。
+    # 新策略：单字条目永不截断——每个读音下的每个字都必须可输入；
+    # 多字词条每键按词频保留前 MAX_MULTI_PER_KEY 条，控制体积。
+    MAX_MULTI_PER_KEY = 40
     for key in merged:
-        merged[key] = merged[key][:MAX_PER_KEY]
+        kept = []
+        multi_kept = 0
+        for word, freq, pinyin in merged[key]:
+            if len(word) == 1:
+                kept.append((word, freq, pinyin))
+            elif multi_kept < MAX_MULTI_PER_KEY:
+                kept.append((word, freq, pinyin))
+                multi_kept += 1
+        merged[key] = kept
 
     # 写二进制
     out_path = os.path.join(data_dir, 'pinyin_dict.bin')

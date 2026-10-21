@@ -18,8 +18,14 @@ class EngineAdapter(
     private var allCandidates: List<KotlinPinyinEngine.Candidate> = emptyList()
 
     companion object {
-        /** 浮层面板的全量候选上限 */
-        private const val MAX_ALL_CANDIDATES = 200
+        /**
+         * 浮层面板的全量候选上限（V87）。
+         * 词库修复后单键候选最多 141 个（yi 键单字），多音节输入合并多个键的
+         * 候选池后仍须保证词库内每个候选都能在全量面板翻到，故上限须远高于
+         * 单键最大值；1024 覆盖合并池的现实规模，排序成本可忽略。
+         * 候选栏预览仍只取前 9 个（getCandidates 默认）。
+         */
+        private const val MAX_ALL_CANDIDATES = 1024
     }
 
     override fun processKey(ch: Char) {
