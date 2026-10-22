@@ -91,6 +91,55 @@ class VoiceImeService : InputMethodService() {
     private val recorder = Recorder()
     private var sherpaBackend: SherpaAsrBackend? = null
 
+    // ---------- V91：语音纠错捕获（一期只记录；检查点快照差分，见 CorrectionTracker） ----------
+    private val correctionTracker = CorrectionTracker()
+
+    @Volatile
+    private var charPinyinTable: com.icegps.voiceime.util.CharPinyinTable? = null
+
+    private fun loadCharPinyin(): com.icegps.voiceime.util.CharPinyinTable? {
+        charPinyinTable?.let { return it }
+        return try {
+            val lines = assets.open("char_pinyin.tsv").bufferedReader().readLines()
+            com.icegps.voiceime.util.CharPinyinTable.fromTsv(lines).also { charPinyinTable = it }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 读编辑器全文 + 选区起点；读不到返回 null（追踪器随之休眠，不影响输入）。 */
+    private fun readEditorText(): Pair<String, Int>? {
+        val ic = currentInputConnection ?: return null
+        return try {
+            val et = ic.getExtractedText(
+                android.view.inputmethod.ExtractedTextRequest().apply {
+                    hintMaxChars = 100_000
+                    hintMaxLines = 10_000
+                }, 0
+            ) ?: return null
+            val text = et.text?.toString() ?: return null
+            text to et.selectionStart.coerceAtLeast(0)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 结算待观察的语音片段：差分出纠错事件后逐条落盘（后台线程写文件）。 */
+    private fun flushCorrections(currentText: String?) {
+        if (!correctionTracker.hasPending) return
+        val events = correctionTracker.flush(currentText)
+        if (events.isEmpty()) return
+        thread {
+            val table = loadCharPinyin()
+            for (ev in events) {
+                val (homo, pb, pa) = table?.judge(ev.before, ev.after) ?: Triple(false, "", "")
+                TranscriptLogger.logCorrection(
+                    this, ev.voiceId, ev.before, ev.after, ev.ctxL, ev.ctxR, homo, pb, pa
+                )
+            }
+        }
+    }
+
     // 长按退格连续删除
     private val backspaceHandler = Handler(Looper.getMainLooper())
     private var backspaceRepeating = false
@@ -639,6 +688,8 @@ class VoiceImeService : InputMethodService() {
     }
 
     override fun onFinishInput() {
+        // V91：会话结束时结算待观察语音片段的纠错记录
+        flushCorrections(readEditorText()?.first)
         // 输入结束时清掉拼音组合状态，避免残留到下一个输入框
         pinyinController?.reset()
         super.onFinishInput()
@@ -664,6 +715,7 @@ class VoiceImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        correctionTracker.clear() // V91：换输入框时丢弃旧片段（结算走 onFinishInput）
         updateEditorAction(attribute)
         updateFieldType(attribute) // V82：按输入框类型自动切键盘
     }
@@ -910,15 +962,26 @@ class VoiceImeService : InputMethodService() {
                 val result = backend.transcribe(pcm)
                 val text = result.text.trim()
                 // 保存语音 + 转写记录（供 Syncthing 同步到 PC）；空结果也归档
-                if (text.isNotEmpty()) {
+                val voiceUuid = if (text.isNotEmpty()) {
                     TranscriptLogger.log(this, pcm, text, engineName, durMs, "ok")
                 } else {
                     TranscriptLogger.log(this, pcm, "", engineName, durMs, "empty", "识别结果为空")
+                    null
                 }
                 uiHandler.post {
                     if (text.isNotEmpty()) {
+                        // V91 纠错捕获：先结算上一段语音的手工修正，再上屏本段
+                        val pre = readEditorText()
+                        flushCorrections(pre?.first)
                         // 系统原生上屏：光标处插入，不覆盖，不进候选栏
                         currentInputConnection?.commitText(text, 1)
+                        // 登记本段为待观察片段（回读校验通过才登记）
+                        if (voiceUuid != null && pre != null) {
+                            val post = readEditorText()
+                            if (post != null) {
+                                correctionTracker.onVoiceCommitted(voiceUuid, post.first, pre.second, text)
+                            }
+                        }
                     } else {
                         toast("没听清，请再说一遍")
                     }

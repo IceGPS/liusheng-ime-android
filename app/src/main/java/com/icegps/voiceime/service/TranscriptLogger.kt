@@ -66,8 +66,10 @@ object TranscriptLogger {
      * @param status "ok" | "empty" | "error"
      * @param error status=error 时的失败原因，可空
      */
+    /** @return 写入记录的 uuid（V91 起供语音纠错事件关联）；失败返回 null。 */
     fun log(ctx: Context, pcm: ShortArray, text: String, engine: String, durMs: Long,
-            status: String = "ok", error: String? = null) {
+            status: String = "ok", error: String? = null): String? {
+        var entryUuid: String? = null
         try {
             val now = Date()
             val dp = datePath(now)
@@ -93,9 +95,10 @@ object TranscriptLogger {
             val tsFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
                 timeZone = TimeZone.getDefault()
             }
+            entryUuid = UUID.randomUUID().toString()
             val entry = JSONObject().apply {
                 put("v", 2)
-                put("uuid", UUID.randomUUID().toString())
+                put("uuid", entryUuid)
                 put("device_id", Prefs.getDeviceId(ctx))
                 put("ts", tsFmt.format(now))
                 put("status", status)
@@ -111,6 +114,49 @@ object TranscriptLogger {
             Log.i(TAG, "已保存转写记录[$status]: ${jsonlFile.name}")
         } catch (e: Exception) {
             Log.w(TAG, "保存转写记录失败", e)
+            entryUuid = null
+        }
+        return entryUuid
+    }
+
+    /**
+     * V91：写一条语音纠错事件（schema v2 加法扩展，type=correction），
+     * 与转写记录同当日 JSONL 文件。编译器按 status!="ok" 将其排除在正文之外，
+     * 由 doc_compiler 的纠错统计单独聚合。设计见 correction-learning-phase1-design.md。
+     */
+    fun logCorrection(ctx: Context, voiceId: String, before: String, after: String,
+                      ctxL: String, ctxR: String, homophone: Boolean,
+                      pinyinBefore: String, pinyinAfter: String) {
+        try {
+            val now = Date()
+            val dp = datePath(now)
+            val logDir = File(baseDir(), "logs/$dp").apply { mkdirs() }
+            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)
+            val jsonlFile = File(logDir, "$dateStr.jsonl")
+            val tsFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
+                timeZone = TimeZone.getDefault()
+            }
+            val entry = JSONObject().apply {
+                put("v", 2)
+                put("type", "correction")
+                put("uuid", UUID.randomUUID().toString())
+                put("device_id", Prefs.getDeviceId(ctx))
+                put("ts", tsFmt.format(now))
+                put("voice_id", voiceId)
+                put("before", before)
+                put("after", after)
+                put("ctx_l", ctxL)
+                put("ctx_r", ctxR)
+                put("homophone", homophone)
+                put("pinyin_before", pinyinBefore)
+                put("pinyin_after", pinyinAfter)
+            }
+            FileOutputStream(jsonlFile, true).use { out ->
+                out.write((entry.toString() + "\n").toByteArray(Charsets.UTF_8))
+            }
+            Log.i(TAG, "已保存纠错记录: $before->$after (homophone=$homophone)")
+        } catch (e: Exception) {
+            Log.w(TAG, "保存纠错记录失败", e)
         }
     }
 

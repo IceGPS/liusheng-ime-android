@@ -17,3 +17,4 @@ local.properties
 # OS
 .DS_Store
 tools/backspace-sim/sim.jar
+tools/correction-sim/sim.jar
