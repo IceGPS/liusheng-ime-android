@@ -9,5 +9,6 @@ interface InputConnection {
     fun finishComposingText(): Boolean
     fun commitText(text: CharSequence, newCursorPosition: Int): Boolean
     fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean
+    fun getSelectedText(flags: Int): CharSequence?
     fun performEditorAction(actionCode: Int): Boolean
 }

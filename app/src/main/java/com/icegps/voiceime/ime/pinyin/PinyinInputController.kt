@@ -2,6 +2,7 @@ package com.icegps.voiceime.ime.pinyin
 
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import com.icegps.voiceime.ime.deleteOneBackward
 
 /**
  * 拼音输入控制器：把键盘 / 候选栏的 UI 事件翻译成 InputConnection 操作。
@@ -11,7 +12,8 @@ import android.view.inputmethod.InputConnection
  * 与 InputConnection 的对接规则：
  * - 拼音组合文本用 setComposingText 显示（下划线预编辑区）
  * - 选中候选词用 commitText 上屏
- * - 退格：有组合文本时先删拼音，无组合文本时 deleteSurroundingText
+ * - 退格：有组合文本时先删拼音；无组合文本时走 [deleteOneBackward]
+ *   （编辑器有选区整段删选区，否则删光标前一字）
  * - 回车：有组合文本时原样上屏拼音字母（不做汉字转换，也不触发编辑器动作）；
  *   无组合文本时，若编辑器声明了动作（搜索/发送等，V81）则 performEditorAction，否则换行
  * - 空格：有组合文本时选首选；无组合文本时输入空格
@@ -384,7 +386,9 @@ class PinyinInputController(
             engine.deleteLast()
             refresh()
         } else {
-            ic()?.deleteSurroundingText(1, 0)
+            // 无组合文本时走共用删除：编辑器有选区先整段删选区，否则删光标前一字
+            // （deleteSurroundingText 不删选区本身，见 EditorOps.deleteOneBackward）。
+            ic()?.deleteOneBackward()
         }
     }
 

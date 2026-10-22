@@ -97,7 +97,7 @@ class VoiceImeService : InputMethodService() {
     private val backspaceRepeat = object : Runnable {
         override fun run() {
             if (!backspaceRepeating) return
-            currentInputConnection?.deleteSurroundingText(1, 0)
+            currentInputConnection?.deleteOneBackward()
             backspaceHandler.postDelayed(this, 50)
         }
     }
@@ -377,7 +377,7 @@ class VoiceImeService : InputMethodService() {
                 MotionEvent.ACTION_DOWN -> {
                     v.alpha = 0.5f
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    currentInputConnection?.deleteSurroundingText(1, 0)
+                    currentInputConnection?.deleteOneBackward()
                     backspaceRepeating = true
                     backspaceHandler.postDelayed(backspaceRepeat, 400)
                     true

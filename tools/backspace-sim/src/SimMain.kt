@@ -123,6 +123,39 @@ fun main() {
     }
 
     println()
+    println("=== Scenario H: editor selection [2,5) of \"abcdef\" (user-selected \"cde\"), no composing -> ⌫ ===")
+    Rig("quanpin").also { rig ->
+        rig.editor.seed("abcdef", 2, 5)
+        rig.state("seeded selection")
+        rig.kb.listener!!.onBackspace()
+        rig.state("⌫#1")
+        val okH = rig.editor.doc.toString() == "abf" && !rig.editor.hasSelection && rig.editor.cursor == 2
+        println("  => H RESULT: ${if (okH) "PASS — whole selection deleted, cursor at 2" else "FAIL — expected doc \"abf\" with no selection (bug: selection kept, left neighbour deleted)"}")
+    }
+
+    println()
+    println("=== Scenario I: no selection, cursor at end of \"abc\" -> ⌫ (regression guard) ===")
+    Rig("quanpin").also { rig ->
+        rig.editor.seed("abc", 3, 3)
+        rig.kb.listener!!.onBackspace()
+        rig.state("⌫#1")
+        val okI = rig.editor.doc.toString() == "ab" && rig.editor.cursor == 2
+        println("  => I RESULT: ${if (okI) "PASS — exactly one char before cursor deleted" else "FAIL — expected doc \"ab\""}")
+    }
+
+    println()
+    println("=== Scenario J: selection [2,5) of \"abcdef\" -> ⌫ x2 (long-press repeat semantics) ===")
+    Rig("quanpin").also { rig ->
+        rig.editor.seed("abcdef", 2, 5)
+        rig.kb.listener!!.onBackspace()
+        rig.state("⌫#1 (must delete the selection)")
+        rig.kb.listener!!.onBackspace()
+        rig.state("⌫#2 (must delete one more char)")
+        val okJ = rig.editor.doc.toString() == "af" && rig.editor.cursor == 1
+        println("  => J RESULT: ${if (okJ) "PASS — first press deletes selection, second deletes one char" else "FAIL — expected doc \"af\""}")
+    }
+
+    println()
     println("=== Scenario E: QUANPIN nihao -> space selects candidate (assoc engages) -> ⌫ ===")
     Rig("quanpin").also { rig ->
         rig.type("nihao")

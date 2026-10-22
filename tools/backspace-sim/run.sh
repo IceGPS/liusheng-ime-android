@@ -11,6 +11,7 @@ cd "$(dirname "$0")"
 export PATH=/home/hatch/jdk/jdk-17.0.20.1+1/bin:$PATH
 APP=../../app/src/main/java/com/icegps/voiceime/ime/pinyin
 /home/hatch/kotlinc/bin/kotlinc \
+  $APP/../EditorOps.kt \
   $APP/PinyinEngine.kt $APP/PinyinInputController.kt $APP/EngineAdapter.kt \
   $APP/KotlinPinyinEngine.kt $APP/PinyinDictionary.kt \
   $APP/PinyinSyllables.kt $APP/ShuangpinMapper.kt \
