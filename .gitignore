@@ -16,3 +16,4 @@ local.properties
 *.iml
 # OS
 .DS_Store
+tools/backspace-sim/sim.jar
